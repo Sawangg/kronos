@@ -57,11 +57,12 @@ pub struct Order {
 }
 
 pub struct Broker {
-    pub added_funds: f64,
     pub cash: f64,
     pub fee_type: Option<FeeType>,
     pub portfolio: HashMap<String, Position>,
     pub orders: Vec<Order>,
+    // Next variables are used for analytics
+    pub added_funds: f64,
     pub total_placed_orders: i32,
     pub total_exec_orders: i32,
     pub total_fees: f64,
@@ -70,11 +71,11 @@ pub struct Broker {
 impl Broker {
     pub fn new() -> Self {
         Broker {
-            added_funds: 0.0,
             cash: 0.0,
             fee_type: None,
             portfolio: HashMap::new(),
             orders: vec![],
+            added_funds: 0.0,
             total_placed_orders: 0,
             total_exec_orders: 0,
             total_fees: 0.0,
@@ -103,6 +104,8 @@ impl Broker {
         self.orders.push(order);
     }
 
+    // NOTE: If the execution of an order failed, we ignore it with i += 1 instead of throwing an
+    // error for now
     pub fn handle_unfulfilled_orders(&mut self, current: &OHLCVData) {
         let mut i = 0;
         while i < self.orders.len() {
@@ -122,8 +125,35 @@ impl Broker {
                         self.orders.remove(i);
                     }
                 }
-                OrderType::Limit(_) | OrderType::Stop(_) => {
-                    i += 1;
+                OrderType::Limit(price) => {
+                    if (order.direction == OrderDirection::Buy && current.open <= price)
+                        || (order.direction == OrderDirection::Sell && current.open >= price)
+                    {
+                        if let Err(e) = self.execute_order(order.clone(), current.open) {
+                            eprintln!("Failed to execute limit order: {}", e);
+                            i += 1;
+                        } else {
+                            self.total_exec_orders += 1;
+                            self.orders.remove(i);
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                OrderType::Stop(price) => {
+                    if (order.direction == OrderDirection::Buy && current.open >= price)
+                        || (order.direction == OrderDirection::Sell && current.open <= price)
+                    {
+                        if let Err(e) = self.execute_order(order.clone(), current.open) {
+                            eprintln!("Failed to execute stop order: {}", e);
+                            i += 1;
+                        } else {
+                            self.total_exec_orders += 1;
+                            self.orders.remove(i);
+                        }
+                    } else {
+                        i += 1;
+                    }
                 }
             }
         }
@@ -177,17 +207,17 @@ impl Broker {
         }
     }
 
-    // Return the total value of all the positions on the close of the tick
+    // Return the total value of all the positions at the current market price
     pub fn portfolio_value(&self, data: &OHLCVData) -> f64 {
         let mut total_value = 0.0;
 
-        for (asset, position) in &self.portfolio {
+        for (_asset, position) in &self.portfolio {
             let current_price = data.close;
             total_value += position.quantity * current_price;
-            println!(
-                "Asset: {}, Quantity: {}, Price: {}",
-                asset, position.quantity, current_price
-            );
+            //println!(
+            //    "Asset: {}, Quantity: {}, Price: {}",
+            //    asset, position.quantity, current_price
+            //);
         }
 
         total_value
