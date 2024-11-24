@@ -2,20 +2,22 @@
 
 Fastest backtest and paper trade framework to test your quantitative strategy. Here is a list of some features:
 
-- Fast and easy to use
+- Fast and easy to use (1 second to backtest 1 year of data with a tick of 1 second)
 - Data source agnostic
-- Supports multiple tickers for complex strategies
+- Can simulate down to a precision of 1 nanosecond
 
 ## TODO
 
+- Supports multiple tickers for complex strategies
 - Visualize your strategy how you wish using your own frontend and websocket
 - Support multiple programming languages to create your strategy
 - Paper trading using live data sources
 
-## Info
+## How to run
 
-Orders are executed on the open of the next tick, meaning you can have a bit of slipage between the time you placed the
-order and its execution.
+```rs
+
+```
 
 ## Implement a strategy
 
@@ -28,8 +30,8 @@ impl Strategy for TestStrategy {
     // Called once at the beginning of the execution
     fn init(&mut self) {}
 
-    // Called once every new tick (a tick can be a second or a day depending on the provided data)
-    fn next(&mut self, data: &[OHLCVData], broker: &mut Broker) {
+    // Called once every tick (the time between ticks can be of any duration, by default it is 1m)
+    fn next(&mut self, current_time: &NaiveDateTime, data: &[OHLCVData], broker: &mut Broker) {
         // Here is how you place a market order
         let order = Order {
             asset: "AAPL".to_string(),
@@ -39,9 +41,6 @@ impl Strategy for TestStrategy {
         };
         broker.place_order(order);
     }
-
-    // Called once every new tick
-    fn log(&self) {}
 }
 ```
 
