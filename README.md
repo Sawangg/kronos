@@ -1,15 +1,17 @@
 # Kronos
 
-Fastest backtest and paper trade framework to test your quantitative strategy. Here is a list of some features:
+Fastest backtest framework to test your quantitative strategies. Here is a list of some of the features:
 
-- Fast and easy to use (1 second to backtest 1 year of data with a tick of 1 second)
+- Fast and easy to use (3 seconds to backtest 1 year of data with a tick of 1 second)
 - Data source agnostic
-- Can simulate down to a precision of 1 nanosecond
+- Can simulate down to a precision of 1 nanosecond for HFT strategies
+- Support for derivatives (Futures, Options, Warrants, ...)
 
 ## TODO
 
-- Supports multiple tickers for complex strategies
-- Visualize your strategy how you wish using your own frontend and websocket
+- Configurable slippage for a more realistic result
+- Supports multiple instruments in one simulation for complex strategies
+- Visualize your strategy how you wish using websockets
 - Support multiple programming languages to create your strategy
 - Paper trading using live data sources
 

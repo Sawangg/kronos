@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use chrono::NaiveDateTime;
+
 use crate::data::OHLCVData;
 
 pub struct Position {
@@ -30,11 +32,6 @@ impl Position {
     }
 }
 
-pub enum FeeType {
-    Flat(f64),
-    Percentage(f64),
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderType {
     Market,
@@ -48,12 +45,18 @@ pub enum OrderDirection {
     Sell,
 }
 
+pub enum FeeType {
+    Flat(f64),
+    Percentage(f64),
+}
+
 #[derive(Clone)]
 pub struct Order {
     pub asset: String,
     pub direction: OrderDirection,
     pub size: f64,
     pub order_type: OrderType,
+    pub valid_until: Option<NaiveDateTime>,
 }
 
 pub struct Broker {
@@ -106,30 +109,42 @@ impl Broker {
 
     // NOTE: If the execution of an order failed, we ignore it with i += 1 instead of throwing an
     // error for now
-    pub fn handle_unfulfilled_orders(&mut self, current: &OHLCVData) {
+    pub fn handle_unfulfilled_orders(
+        &mut self,
+        current_time: &NaiveDateTime,
+        current_price: &OHLCVData,
+    ) {
         let mut i = 0;
         while i < self.orders.len() {
             let order = &self.orders[i];
 
+            // Remove order if expired
+            if let Some(valid_until) = order.valid_until {
+                if current_time > &valid_until {
+                    self.orders.remove(i);
+                    continue;
+                }
+            }
+
             match order.order_type {
                 OrderType::Market => {
-                    if let Err(e) = self.execute_order(order.clone(), current.open) {
+                    if let Err(e) = self.execute_order(order.clone(), current_price.open) {
                         eprintln!("Failed to execute order: {}", e);
                         i += 1;
                     } else {
                         println!(
                             "Executed an order on {} at {}",
-                            current.timestamp, current.open
+                            current_price.timestamp, current_price.open
                         );
                         self.total_exec_orders += 1;
                         self.orders.remove(i);
                     }
                 }
                 OrderType::Limit(price) => {
-                    if (order.direction == OrderDirection::Buy && current.open <= price)
-                        || (order.direction == OrderDirection::Sell && current.open >= price)
+                    if (order.direction == OrderDirection::Buy && current_price.open <= price)
+                        || (order.direction == OrderDirection::Sell && current_price.open >= price)
                     {
-                        if let Err(e) = self.execute_order(order.clone(), current.open) {
+                        if let Err(e) = self.execute_order(order.clone(), current_price.open) {
                             eprintln!("Failed to execute limit order: {}", e);
                             i += 1;
                         } else {
@@ -141,10 +156,10 @@ impl Broker {
                     }
                 }
                 OrderType::Stop(price) => {
-                    if (order.direction == OrderDirection::Buy && current.open >= price)
-                        || (order.direction == OrderDirection::Sell && current.open <= price)
+                    if (order.direction == OrderDirection::Buy && current_price.open >= price)
+                        || (order.direction == OrderDirection::Sell && current_price.open <= price)
                     {
-                        if let Err(e) = self.execute_order(order.clone(), current.open) {
+                        if let Err(e) = self.execute_order(order.clone(), current_price.open) {
                             eprintln!("Failed to execute stop order: {}", e);
                             i += 1;
                         } else {
@@ -241,6 +256,10 @@ mod tests {
         }
     }
 
+    fn create_dummy_date(date: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S").expect("Invalid date")
+    }
+
     #[test]
     fn is_order_placed() {
         let mut broker = Broker::new();
@@ -249,6 +268,7 @@ mod tests {
             direction: OrderDirection::Buy,
             size: 1.0,
             order_type: OrderType::Market,
+            valid_until: None,
         };
         broker.place_order(order);
 
@@ -269,6 +289,7 @@ mod tests {
             direction: OrderDirection::Buy,
             size: 1.0,
             order_type: OrderType::Market,
+            valid_until: None,
         };
         broker.set_cash(1000.0);
         broker.set_fees(FeeType::Flat(1.0));
@@ -276,7 +297,7 @@ mod tests {
 
         // Simulate next tick
         let dummy_price = create_dummy_price(100.0, 101.0, 98.0, 99.0);
-        broker.handle_unfulfilled_orders(&dummy_price);
+        broker.handle_unfulfilled_orders(&create_dummy_date("1999-11-01 00:00:00"), &dummy_price);
 
         // Check the cash in our balance after the execution (order price + fees)
         assert_eq!(broker.cash, 899.0);
@@ -296,13 +317,14 @@ mod tests {
             direction: OrderDirection::Buy,
             size: 1.0,
             order_type: OrderType::Market,
+            valid_until: None,
         };
         broker.set_fees(FeeType::Flat(1.0));
         broker.place_order(order);
 
         // Simulate next tick
         let dummy_price = create_dummy_price(100.0, 101.0, 98.0, 99.0);
-        broker.handle_unfulfilled_orders(&dummy_price);
+        broker.handle_unfulfilled_orders(&create_dummy_date("1999-11-01 00:00:00"), &dummy_price);
 
         // Check the cash in our balance after the execution (order price + fees)
         assert_eq!(broker.cash, 0.0);
@@ -320,6 +342,7 @@ mod tests {
             direction: OrderDirection::Buy,
             size: 1.0,
             order_type: OrderType::Market,
+            valid_until: None,
         };
         broker.set_cash(1000.0);
         broker.set_fees(FeeType::Flat(1.0));
@@ -331,7 +354,7 @@ mod tests {
 
         // Simulate next tick
         let dummy_price = create_dummy_price(110.0, 111.0, 98.0, 99.0);
-        broker.handle_unfulfilled_orders(&dummy_price);
+        broker.handle_unfulfilled_orders(&create_dummy_date("1999-11-01 00:00:00"), &dummy_price);
 
         // Check if the assets are in the portfolio
         let position = broker.portfolio.get("AAPL").unwrap();
@@ -349,6 +372,7 @@ mod tests {
             direction: OrderDirection::Sell,
             size: 1.0,
             order_type: OrderType::Market,
+            valid_until: None,
         };
         broker.set_cash(1000.0);
         broker.set_fees(FeeType::Flat(1.0));
@@ -360,7 +384,7 @@ mod tests {
 
         // Simulate next tick
         let dummy_price = create_dummy_price(100.0, 101.0, 98.0, 99.0);
-        broker.handle_unfulfilled_orders(&dummy_price);
+        broker.handle_unfulfilled_orders(&create_dummy_date("1999-11-01 00:00:00"), &dummy_price);
 
         // Check the cash after execution (1000 + 100 - 1 (cash + position - fee))
         assert_eq!(broker.cash, 1099.0);

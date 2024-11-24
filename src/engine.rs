@@ -3,6 +3,7 @@ use crate::data::OHLCVData;
 use crate::strategy::Strategy;
 use chrono::{Duration, NaiveDateTime};
 use colored::Colorize;
+use std::time::Instant;
 
 pub struct BacktestEngine {
     pub broker: Broker,
@@ -55,6 +56,8 @@ impl BacktestEngine {
     }
 
     pub fn run(&mut self) {
+        let start_time = Instant::now();
+
         self.strategy.init();
 
         if self.data_feed.is_empty() {
@@ -68,37 +71,18 @@ impl BacktestEngine {
         let mut data_index = 0;
 
         while current_time <= *to_time {
-            let mut closest_data: Option<&OHLCVData> = None;
-            let mut closest_time_diff = std::i64::MAX;
-
-            while data_index < self.data_feed.len() {
-                let ohlcv = &self.data_feed[data_index];
-                let time_diff = (ohlcv
-                    .timestamp
-                    .signed_duration_since(current_time)
-                    .num_seconds())
-                .abs();
-
-                if time_diff < closest_time_diff {
-                    closest_data = Some(ohlcv);
-                    closest_time_diff = time_diff;
+            if data_index + 1 < self.data_feed.len() {
+                let next_data = &self.data_feed[data_index + 1];
+                if next_data.timestamp <= current_time {
+                    data_index += 1;
                 }
-
-                if ohlcv.timestamp > current_time {
-                    break;
-                }
-
-                data_index += 1;
             }
 
-            if let Some(current_price) = closest_data {
-                self.broker.handle_unfulfilled_orders(current_price);
+            if let Some(current_price) = self.data_feed.get(data_index) {
+                self.broker
+                    .handle_unfulfilled_orders(&current_time, current_price);
 
-                let previous_data = if data_index < self.data_feed.len() {
-                    &self.data_feed[..=data_index]
-                } else {
-                    &self.data_feed[..]
-                };
+                let previous_data = &self.data_feed[..=data_index];
 
                 self.strategy
                     .next(&current_time, previous_data, &mut self.broker);
@@ -108,16 +92,16 @@ impl BacktestEngine {
 
             current_time += self.tick;
 
-            // Quit the simulation early if there is no data left
+            // Exit if we've gone past the last data timestamp
             if current_time > self.data_feed.last().unwrap().timestamp {
                 break;
             }
         }
 
-        self.feedback();
+        self.feedback(start_time.elapsed());
     }
 
-    fn feedback(&self) {
+    fn feedback(&self, elapsed_time: std::time::Duration) {
         let last_tick = self.data_feed.last().expect("No data found");
         let profit = f64::trunc(
             ((self.broker.cash + self.broker.portfolio_value(&last_tick))
@@ -126,7 +110,9 @@ impl BacktestEngine {
         ) / 100.0;
 
         println!(
-            "===============================\nCash: {}\nPortfolio value: {}\nProfit: {} ({}%)\nNumber of orders placed: {}\nNumber of orders executed: {}\nTotal commissions: {}\n===============================",
+            "===============================\nRan the simulation from '' to '' and took {}.{:03} seconds\nCash: {}\nPortfolio value: {}\nProfit: {} ({}%)\nNumber of orders placed: {}\nNumber of orders executed: {}\nTotal commissions: {}\n===============================",
+            elapsed_time.as_secs(),
+            elapsed_time.subsec_millis(),
             f64::trunc(self.broker.cash * 100.0) / 100.0,
             f64::trunc(self.broker.portfolio_value(&last_tick) * 100.0) / 100.0,
             if profit >= 0.0 { profit.to_string().green() } else { profit.to_string().red() },

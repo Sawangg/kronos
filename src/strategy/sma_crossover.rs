@@ -44,6 +44,7 @@ impl SMACrossoverStrategy {
                 direction: OrderDirection::Buy,
                 order_type: OrderType::Market,
                 size: 1.0,
+                valid_until: None,
             };
             broker.place_order(order);
             //println!("Buy signal: Short SMA crossed above Long SMA");
@@ -57,6 +58,7 @@ impl SMACrossoverStrategy {
                 direction: OrderDirection::Sell,
                 order_type: OrderType::Market,
                 size: 1.0,
+                valid_until: None,
             };
             broker.place_order(order);
             //println!("Sell signal: Short SMA crossed below Long SMA");
