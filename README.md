@@ -1,25 +1,28 @@
 # Kronos
 
-Fastest backtest framework to test your quantitative strategies. Here is a list of some of the features:
+Fast backtest framework to test your quantitative strategies. Here is a list of some of the features:
 
 - Fast and easy to use (3 seconds to backtest 1 year of data with a tick of 1 second)
-- Data source agnostic
+- Data source agnostic, provide OHLCV data how you wish
 - Can simulate down to a precision of 1 nanosecond for HFT strategies
-- Support for derivatives (Futures, Options, Warrants, ...)
 
 ## TODO
 
+- Support for derivatives (Futures, Options, Warrants, ...)
 - Configurable slippage for a more realistic result
 - Supports multiple instruments in one simulation for complex strategies
 - Visualize your strategy how you wish using websockets
 - Support multiple programming languages to create your strategy
-- Paper trading using live data sources
+- Support L2 data for a better overview of the order book
+- Support other data types like FIX
 
 ## How to run
 
 ```rs
 
 ```
+> [!NOTE]
+> You should be careful about stock split in your data if it isn't ajusted, it might falsify the result of the simulation
 
 ## Implement a strategy
 
@@ -36,7 +39,7 @@ impl Strategy for TestStrategy {
     fn next(&mut self, current_time: &NaiveDateTime, data: &[OHLCVData], broker: &mut Broker) {
         // Here is how you place a market order
         let order = Order {
-            asset: "AAPL".to_string(),
+            instrument: "AAPL".to_string(),
             direction: OrderDirection::Buy,
             order_type: OrderType::Market,
             size: 1.0,
@@ -45,7 +48,3 @@ impl Strategy for TestStrategy {
     }
 }
 ```
-
-## Warning
-
-You should be careful about stock split in your data if it isn't ajusted, it might falsify the result of the simulation
