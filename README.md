@@ -4,7 +4,8 @@ Fast backtest framework to test your quantitative strategies. Here is a list of 
 
 - Fast and easy to use (3 seconds to backtest 1 year of data with a tick of 1 second)
 - Data source agnostic, provide OHLCV data how you wish
-- Can simulate down to a precision of 1 nanosecond for HFT strategies
+- Can be used with a variety of assets (Stocks, Crypto, ...)
+- Able to simulate down to a precision of 1 nanosecond for HFT strategies
 
 ## TODO
 
@@ -16,11 +17,6 @@ Fast backtest framework to test your quantitative strategies. Here is a list of 
 - Support L2 data for a better overview of the order book
 - Support other data types like FIX
 
-## How to run
-
-```rs
-
-```
 > [!NOTE]
 > You should be careful about stock split in your data if it isn't ajusted, it might falsify the result of the simulation
 
