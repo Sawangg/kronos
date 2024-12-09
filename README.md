@@ -7,16 +7,6 @@ Fast backtest framework to test your quantitative strategies. Here is a list of 
 - Can be used with a variety of assets (Stocks, Crypto, ...)
 - Able to simulate down to a precision of 1 nanosecond for HFT strategies
 
-## TODO
-
-- Support for derivatives (Futures, Options, Warrants, ...)
-- Configurable slippage for a more realistic result
-- Supports multiple instruments in one simulation for complex strategies
-- Visualize your strategy how you wish using websockets
-- Support multiple programming languages to create your strategy
-- Support L2 data for a better overview of the order book
-- Support other data types like FIX
-
 > [!NOTE]
 > You should be careful about stock split in your data if it isn't ajusted, it might falsify the result of the simulation
 
@@ -44,3 +34,12 @@ impl Strategy for TestStrategy {
     }
 }
 ```
+## TODO
+
+- Support for derivatives (Futures, Options, Warrants, ...)
+- Configurable slippage for a more realistic result
+- Supports multiple instruments in one simulation for complex strategies
+- Visualize your strategy how you wish using websockets
+- Support multiple programming languages to create your strategy
+- Support L2 data for a better overview of the order book
+- Support other data types like FIX
