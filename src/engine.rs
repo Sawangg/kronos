@@ -9,7 +9,6 @@ pub struct BacktestEngine {
     pub broker: Broker,
     pub data_feed: Vec<OHLCVData>,
     pub strategy: Box<dyn Strategy>,
-    pub slippage: (Duration, Option<Duration>),
     pub time_range: Option<(NaiveDateTime, NaiveDateTime)>,
     pub tick: Duration,
 }
@@ -20,7 +19,6 @@ impl BacktestEngine {
             broker: Broker::new(),
             data_feed: vec![],
             strategy,
-            slippage: (Duration::minutes(1), None),
             time_range: None,
             tick: Duration::minutes(1),
         }
@@ -33,10 +31,6 @@ impl BacktestEngine {
 
     pub fn set_broker(&mut self, broker: Broker) {
         self.broker = broker;
-    }
-
-    pub fn set_slipage(&mut self, slipage: Duration, max_slipage: Option<Duration>) {
-        self.slippage = (slipage, max_slipage);
     }
 
     pub fn set_time(&mut self, from: &str, to: &str) {
@@ -110,7 +104,7 @@ impl BacktestEngine {
         ) / 100.0;
 
         println!(
-            "===============================\nRan the simulation from '' to '' and took {}.{:03} seconds\nCash: {}\nPortfolio value: {}\nProfit: {} ({}%)\nNumber of orders placed: {}\nNumber of orders executed: {}\nTotal commissions: {}\n===============================",
+            "===============================\nRan the simulation from '' to '' and took {}.{:03} seconds\nCash: {}\nPortfolio value: {}\nProfit: {} ({}%)\nNumber of orders placed: {}\nNumber of orders executed: {}\nTotal in commissions: {}\nTotal slippage: {}\n===============================",
             elapsed_time.as_secs(),
             elapsed_time.subsec_millis(),
             f64::trunc(self.broker.cash * 100.0) / 100.0,
@@ -120,6 +114,7 @@ impl BacktestEngine {
             self.broker.total_placed_orders,
             self.broker.total_exec_orders,
             self.broker.total_fees,
+            self.broker.total_slippage,
         );
     }
 }

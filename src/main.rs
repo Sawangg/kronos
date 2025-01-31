@@ -36,6 +36,7 @@ async fn main() {
     let mut broker = Broker::new();
     broker.set_cash(10_000.0);
     broker.set_fees(FeeType::Flat(1.0));
+    broker.set_slippage(-0.005, 0.005); // Set slippage between -0.5% and +0.5%
 
     engine.set_broker(broker);
 

@@ -1,3 +1,4 @@
+use rand::Rng;
 use std::collections::HashMap;
 
 use chrono::NaiveDateTime;
@@ -62,6 +63,7 @@ pub struct Order {
 pub struct Broker {
     pub cash: f64,
     pub fee_type: Option<FeeType>,
+    pub slippage_range: (f64, f64),
     pub portfolio: HashMap<String, Position>,
     pub orders: Vec<Order>,
     // Next variables are used for analytics
@@ -69,6 +71,7 @@ pub struct Broker {
     pub total_placed_orders: i32,
     pub total_exec_orders: i32,
     pub total_fees: f64,
+    pub total_slippage: f64,
 }
 
 impl Broker {
@@ -76,12 +79,14 @@ impl Broker {
         Broker {
             cash: 0.0,
             fee_type: None,
+            slippage_range: (0.0, 0.0),
             portfolio: HashMap::new(),
             orders: vec![],
             added_funds: 0.0,
             total_placed_orders: 0,
             total_exec_orders: 0,
             total_fees: 0.0,
+            total_slippage: 0.0,
         }
     }
 
@@ -92,6 +97,10 @@ impl Broker {
 
     pub fn set_fees(&mut self, fee_type: FeeType) {
         self.fee_type = Some(fee_type);
+    }
+
+    pub fn set_slippage(&mut self, min_slippage: f64, max_slippage: f64) {
+        self.slippage_range = (min_slippage, max_slippage);
     }
 
     fn calculate_fees(&mut self, amount: f64) -> f64 {
@@ -174,10 +183,22 @@ impl Broker {
         }
     }
 
+    // NOTE: We could calculate the slippage based on the trade size, implied volatility for a
+    // more accurate result. For now simply use a random range
+    fn apply_slippage(&self, market_price: f64) -> f64 {
+        let slippage_percentage =
+            rand::rng().random_range(self.slippage_range.0..=self.slippage_range.1);
+        market_price * (1.0 + slippage_percentage)
+    }
+
     fn execute_order(&mut self, order: Order, market_price: f64) -> Result<(), String> {
+        let execution_price = self.apply_slippage(market_price);
+        let slippage_diff = execution_price - market_price;
+        self.total_slippage += slippage_diff * order.size;
+
         match order.direction {
             OrderDirection::Buy => {
-                let total_cost = order.size * market_price;
+                let total_cost = order.size * execution_price;
                 let fees = self.calculate_fees(total_cost);
                 let total_spent = total_cost + fees;
 
@@ -188,16 +209,16 @@ impl Broker {
                     let position = self
                         .portfolio
                         .entry(order.asset.clone())
-                        .or_insert_with(|| Position::new(0.0, market_price));
+                        .or_insert_with(|| Position::new(0.0, execution_price));
 
-                    position.update(order.size, market_price);
+                    position.update(order.size, execution_price);
                     Ok(())
                 } else {
                     Err("Not enough cash".to_string())
                 }
             }
             OrderDirection::Sell => {
-                let total_raw_value = order.size * market_price;
+                let total_raw_value = order.size * execution_price;
                 let fees = self.calculate_fees(total_raw_value);
                 let total_value = total_raw_value - fees;
 
