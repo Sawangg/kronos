@@ -1,20 +1,31 @@
-use crate::broker::Broker;
+use crate::broker::broker::Broker;
 use crate::data::OHLCVData;
 use crate::strategy::Strategy;
 use chrono::{Duration, NaiveDateTime};
-use colored::Colorize;
-use std::time::Instant;
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct BacktestResult {
+    pub cash: f64,
+    pub portfolio_value: f64,
+    pub profit: f64,
+    pub profit_percentage: f64,
+    pub num_orders_placed: i32,
+    pub num_orders_executed: i32,
+    pub total_fees: f64,
+    pub total_slippage: f64,
+}
 
 pub struct BacktestEngine {
     pub broker: Broker,
     pub data_feed: Vec<OHLCVData>,
-    pub strategy: Box<dyn Strategy>,
+    pub strategy: Box<dyn Strategy + Send>,
     pub time_range: Option<(NaiveDateTime, NaiveDateTime)>,
     pub tick: Duration,
 }
 
 impl BacktestEngine {
-    pub fn new(strategy: Box<dyn Strategy>) -> Self {
+    pub fn new(strategy: Box<dyn Strategy + Send>) -> Self {
         BacktestEngine {
             broker: Broker::new(),
             data_feed: vec![],
@@ -49,14 +60,12 @@ impl BacktestEngine {
         self.tick = tick;
     }
 
-    pub fn run(&mut self) {
-        let start_time = Instant::now();
-
+    // TODO: use unix timestamp instead of chrono for efficiency
+    pub fn run(&mut self) -> Result<BacktestResult, &'static str> {
         self.strategy.init();
 
         if self.data_feed.is_empty() {
-            println!("Error: Data feed is empty.");
-            return;
+            return Err("Error: Data feed is empty.");
         }
 
         let (from_time, to_time) = self.time_range.as_ref().expect("Time range is not set");
@@ -79,7 +88,7 @@ impl BacktestEngine {
                 let previous_data = &self.data_feed[..=data_index];
 
                 self.strategy
-                    .next(&current_time, previous_data, &mut self.broker);
+                    .tick(&current_time, previous_data, &mut self.broker);
             } else {
                 println!("No data available for the current time: {}", current_time);
             }
@@ -92,10 +101,7 @@ impl BacktestEngine {
             }
         }
 
-        self.feedback(start_time.elapsed());
-    }
-
-    fn feedback(&self, elapsed_time: std::time::Duration) {
+        // Creating feedback data
         let last_tick = self.data_feed.last().expect("No data found");
         let profit = f64::trunc(
             ((self.broker.cash + self.broker.portfolio_value(&last_tick))
@@ -103,18 +109,18 @@ impl BacktestEngine {
                 * 100.0,
         ) / 100.0;
 
-        println!(
-            "===============================\nRan the simulation from '' to '' and took {}.{:03} seconds\nCash: {}\nPortfolio value: {}\nProfit: {} ({}%)\nNumber of orders placed: {}\nNumber of orders executed: {}\nTotal in commissions: {}\nTotal slippage: {}\n===============================",
-            elapsed_time.as_secs(),
-            elapsed_time.subsec_millis(),
-            f64::trunc(self.broker.cash * 100.0) / 100.0,
-            f64::trunc(self.broker.portfolio_value(&last_tick) * 100.0) / 100.0,
-            if profit >= 0.0 { profit.to_string().green() } else { profit.to_string().red() },
-            f64::trunc(((profit / self.broker.added_funds) * 100.0) * 100.0) / 100.0,
-            self.broker.total_placed_orders,
-            self.broker.total_exec_orders,
-            self.broker.total_fees,
-            self.broker.total_slippage,
-        );
+        let profit_percentage =
+            f64::trunc(((profit / self.broker.added_funds) * 100.0) * 100.0) / 100.0;
+
+        Ok(BacktestResult {
+            cash: f64::trunc(self.broker.cash * 100.0) / 100.0,
+            portfolio_value: f64::trunc(self.broker.portfolio_value(&last_tick) * 100.0) / 100.0,
+            profit,
+            profit_percentage,
+            num_orders_placed: self.broker.total_placed_orders,
+            num_orders_executed: self.broker.total_exec_orders,
+            total_fees: self.broker.total_fees,
+            total_slippage: self.broker.total_slippage,
+        })
     }
 }

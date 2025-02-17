@@ -1,9 +1,9 @@
-use crate::{broker::Broker, data::OHLCVData};
+use crate::{broker::broker::Broker, data::OHLCVData};
 use chrono::NaiveDateTime;
 
 pub mod sma_crossover;
 
 pub trait Strategy {
     fn init(&mut self);
-    fn next(&mut self, current_time: &NaiveDateTime, data: &[OHLCVData], broker: &mut Broker);
+    fn tick(&mut self, current_time: &NaiveDateTime, data: &[OHLCVData], broker: &mut Broker);
 }

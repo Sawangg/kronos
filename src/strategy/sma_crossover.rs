@@ -1,4 +1,7 @@
-use crate::broker::{Broker, Order, OrderDirection, OrderType};
+use crate::broker::{
+    broker::Broker,
+    order::{Order, OrderDirection, OrderType},
+};
 use crate::data::OHLCVData;
 use crate::strategy::Strategy;
 use chrono::NaiveDateTime;
@@ -73,7 +76,7 @@ impl Strategy for SMACrossoverStrategy {
         println!("Initialized SMA Crossover Strategy");
     }
 
-    fn next(&mut self, _current_time: &NaiveDateTime, data: &[OHLCVData], broker: &mut Broker) {
+    fn tick(&mut self, _current_time: &NaiveDateTime, data: &[OHLCVData], broker: &mut Broker) {
         self.check_for_crossover(data, broker);
     }
 }

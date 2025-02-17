@@ -1,64 +1,12 @@
+use crate::broker::{
+    fee::FeeType,
+    order::{Order, OrderDirection, OrderType},
+    position::Position,
+};
+use crate::data::OHLCVData;
+use chrono::NaiveDateTime;
 use rand::Rng;
 use std::collections::HashMap;
-
-use chrono::NaiveDateTime;
-
-use crate::data::OHLCVData;
-
-pub struct Position {
-    pub quantity: f64,
-    pub average_price: f64,
-}
-
-impl Position {
-    pub fn new(quantity: f64, price: f64) -> Self {
-        Position {
-            quantity,
-            average_price: price,
-        }
-    }
-
-    pub fn update(&mut self, quantity: f64, price: f64) {
-        let total_cost = self.average_price * self.quantity + price * quantity;
-        self.quantity += quantity;
-        self.average_price = total_cost / self.quantity;
-    }
-
-    pub fn remove(&mut self, quantity: f64) -> Result<(), String> {
-        if quantity > self.quantity {
-            return Err("Cannot sell more than the available quantity.".to_string());
-        }
-        self.quantity -= quantity;
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OrderType {
-    Market,
-    Limit(f64),
-    Stop(f64),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OrderDirection {
-    Buy,
-    Sell,
-}
-
-pub enum FeeType {
-    Flat(f64),
-    Percentage(f64),
-}
-
-#[derive(Clone)]
-pub struct Order {
-    pub asset: String,
-    pub direction: OrderDirection,
-    pub size: f64,
-    pub order_type: OrderType,
-    pub valid_until: Option<NaiveDateTime>,
-}
 
 pub struct Broker {
     pub cash: f64,
@@ -103,17 +51,17 @@ impl Broker {
         self.slippage_range = (min_slippage, max_slippage);
     }
 
+    pub fn place_order(&mut self, order: Order) {
+        self.total_placed_orders += 1;
+        self.orders.push(order);
+    }
+
     fn calculate_fees(&mut self, amount: f64) -> f64 {
         match &self.fee_type {
             Some(FeeType::Flat(fee)) => *fee,
             Some(FeeType::Percentage(percentage)) => amount * *percentage,
             _ => 0.0,
         }
-    }
-
-    pub fn place_order(&mut self, order: Order) {
-        self.total_placed_orders += 1;
-        self.orders.push(order);
     }
 
     // NOTE: If the execution of an order failed, we ignore it with i += 1 instead of throwing an
@@ -141,10 +89,6 @@ impl Broker {
                         eprintln!("Failed to execute order: {}", e);
                         i += 1;
                     } else {
-                        println!(
-                            "Executed an order on {} at {}",
-                            current_price.timestamp, current_price.open
-                        );
                         self.total_exec_orders += 1;
                         self.orders.remove(i);
                     }
