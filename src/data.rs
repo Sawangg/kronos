@@ -21,7 +21,7 @@ pub async fn polygon_aggregate(
     from: &str,
     to: &str,
 ) -> Result<Vec<OHLCVData>, Box<dyn Error>> {
-    let api_key = "iOJZI2Hw1BxdehruJ6p4LvByStwB7UDS";
+    let api_key = std::env::var("API_KEY").unwrap();
 
     let url = format!(
         "https://api.polygon.io/v2/aggs/ticker/{}/range/{}/{}/{}/{}?apiKey={}",

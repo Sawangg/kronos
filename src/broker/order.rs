@@ -1,3 +1,4 @@
+// TODO: add one-time order purchase and order sell fees
 use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone, PartialEq)]

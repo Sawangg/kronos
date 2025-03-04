@@ -73,7 +73,6 @@ impl SMACrossoverStrategy {
 impl Strategy for SMACrossoverStrategy {
     fn init(&mut self) {
         self.position_open = false;
-        println!("Initialized SMA Crossover Strategy");
     }
 
     fn tick(&mut self, _current_time: &NaiveDateTime, data: &[OHLCVData], broker: &mut Broker) {

@@ -1,4 +1,3 @@
-// TODO: Allow for one time fees per trade
 use serde::Deserialize;
 
 #[derive(Deserialize)]
