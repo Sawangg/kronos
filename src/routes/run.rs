@@ -1,8 +1,8 @@
 use crate::broker::{broker::Broker, fee::FeeType};
 use crate::data::polygon_aggregate;
-use crate::engine::{BacktestEngine, BacktestResult};
+use crate::engine::{BacktestResult, Engine};
 use axum::{http::StatusCode, Json};
-use chrono::Duration;
+use chrono::{Duration, NaiveDateTime};
 use serde::Deserialize;
 
 use crate::strategy::sma_crossover::SMACrossoverStrategy;
@@ -37,16 +37,18 @@ struct SlippageSettings {
 pub async fn run(
     Json(payload): Json<CreateSimulation>,
 ) -> (StatusCode, Json<Result<BacktestResult, &'static str>>) {
-    let start_date = &payload.parameters.start_date;
-    let end_date = &payload.parameters.end_date;
+    let parse_time = |time_str: &str| {
+        NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S")
+            .map_err(|_| "Invalid date format")
+    };
 
+    let start_date = parse_time(&payload.parameters.start_date).expect("Invalid start_date format");
+    let end_date = parse_time(&payload.parameters.end_date).expect("Invalid end_date format");
+
+    // TODO: remove this when WASM based strategies are implemented
     let strategy = Box::new(SMACrossoverStrategy::new(5, 200));
 
-    let mut engine = BacktestEngine::new(strategy);
-    engine.set_time(
-        &format!("{} 00:00:00", start_date),
-        &format!("{} 00:00:00", end_date),
-    );
+    let mut engine = Engine::new(strategy, (start_date, end_date));
 
     if let Some(tick) = &payload.parameters.tick {
         let duration = if let Ok(value) = tick
@@ -69,9 +71,15 @@ pub async fn run(
     }
 
     // TODO: Bring your own data
-    let data_feed = polygon_aggregate(&payload.data, 1, "day", start_date, end_date)
-        .await
-        .expect("Failed to fetch OHLCV data");
+    let data_feed = polygon_aggregate(
+        &payload.data,
+        1,
+        "day",
+        &payload.parameters.start_date[..10],
+        &payload.parameters.end_date[..10],
+    )
+    .await
+    .expect("Failed to fetch OHLCV data");
 
     engine.add_data(data_feed);
 

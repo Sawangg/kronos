@@ -19,14 +19,17 @@ Here is an example of an execution of a strategy with a simple POST request
 ```sh
 curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
     "parameters": {
-      "start_date": "2024-02-17",
-      "end_date": "2025-02-17",
+      "start_date": "2024-02-17 00:00:00",
+      "end_date": "2025-02-17 00:00:00",
       "tick": "1s"
     },
     "data": "AAPL",
     "broker": {
       "cash": 10000.0,
       "fees": { "Flat": 1.0 }
+      "slippage": {
+        "min": 0.01,
+        "max": 0.05
     }
   }'
 ```

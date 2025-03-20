@@ -16,21 +16,24 @@ pub struct BacktestResult {
     pub total_slippage: f64,
 }
 
-pub struct BacktestEngine {
+pub struct Engine {
     pub broker: Broker,
     pub data_feed: Vec<OHLCVData>,
     pub strategy: Box<dyn Strategy + Send>,
-    pub time_range: Option<(NaiveDateTime, NaiveDateTime)>,
+    pub time_range: (NaiveDateTime, NaiveDateTime),
     pub tick: Duration,
 }
 
-impl BacktestEngine {
-    pub fn new(strategy: Box<dyn Strategy + Send>) -> Self {
-        BacktestEngine {
+impl Engine {
+    pub fn new(
+        strategy: Box<dyn Strategy + Send>,
+        time_range: (NaiveDateTime, NaiveDateTime),
+    ) -> Self {
+        Engine {
             broker: Broker::new(),
             data_feed: vec![],
             strategy,
-            time_range: None,
+            time_range,
             tick: Duration::minutes(1),
         }
     }
@@ -44,22 +47,11 @@ impl BacktestEngine {
         self.broker = broker;
     }
 
-    pub fn set_time(&mut self, from: &str, to: &str) {
-        let parse_time = |time_str: &str| {
-            NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S")
-                .map_err(|_| "Invalid date format")
-        };
-
-        let from_time = parse_time(from).expect("Invalid 'from' date format");
-        let to_time = parse_time(to).expect("Invalid 'to' date format");
-
-        self.time_range = Some((from_time, to_time));
-    }
-
     pub fn set_tick(&mut self, tick: Duration) {
         self.tick = tick;
     }
 
+    // TODO: cut loop time by optimizing time with trading days for stock assets (45% time decrease)
     // TODO: use unix timestamp instead of chrono for efficiency
     pub fn run(&mut self) -> Result<BacktestResult, &'static str> {
         self.strategy.init();
@@ -68,12 +60,12 @@ impl BacktestEngine {
             return Err("Error: Data feed is empty.");
         }
 
-        let (from_time, to_time) = self.time_range.as_ref().expect("Time range is not set");
+        let (start_time, end_time) = self.time_range;
 
-        let mut current_time = *from_time;
+        let mut current_time = start_time;
         let mut data_index = 0;
 
-        while current_time <= *to_time {
+        while current_time <= end_time {
             if data_index + 1 < self.data_feed.len() {
                 let next_data = &self.data_feed[data_index + 1];
                 if next_data.timestamp <= current_time {
@@ -85,12 +77,11 @@ impl BacktestEngine {
                 self.broker
                     .handle_unfulfilled_orders(&current_time, current_price);
 
-                let previous_data = &self.data_feed[..=data_index];
-
-                self.strategy
-                    .tick(&current_time, previous_data, &mut self.broker);
-            } else {
-                println!("No data available for the current time: {}", current_time);
+                self.strategy.tick(
+                    &current_time,
+                    &self.data_feed[..=data_index], // all previous data
+                    &mut self.broker,
+                );
             }
 
             current_time += self.tick;
