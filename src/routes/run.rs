@@ -2,6 +2,7 @@ use crate::broker::{broker::Broker, fee::FeeType};
 use crate::data::polygon_aggregate;
 use crate::engine::{BacktestEngine, BacktestResult};
 use axum::{http::StatusCode, Json};
+use chrono::Duration;
 use serde::Deserialize;
 
 use crate::strategy::sma_crossover::SMACrossoverStrategy;
@@ -33,7 +34,6 @@ struct SlippageSettings {
     max: f64,
 }
 
-#[axum::debug_handler]
 pub async fn run(
     Json(payload): Json<CreateSimulation>,
 ) -> (StatusCode, Json<Result<BacktestResult, &'static str>>) {
@@ -48,9 +48,25 @@ pub async fn run(
         &format!("{} 00:00:00", end_date),
     );
 
-    // if let Some(tick) = &payload.parameters.tick {
-    //     engine.set_tick(tick.parse().unwrap_or_default());
-    // }
+    if let Some(tick) = &payload.parameters.tick {
+        let duration = if let Ok(value) = tick
+            .trim_end_matches(|c| c == 's' || c == 'n')
+            .parse::<i64>()
+        {
+            if tick.ends_with("ns") {
+                Duration::new(0, value as u32)
+            } else {
+                Duration::new(value, 0)
+            }
+        } else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Err("Cannot parse tick duration")),
+            );
+        };
+
+        engine.set_tick(duration.expect("Cannot parse tick duration"));
+    }
 
     // TODO: Bring your own data
     let data_feed = polygon_aggregate(&payload.data, 1, "day", start_date, end_date)

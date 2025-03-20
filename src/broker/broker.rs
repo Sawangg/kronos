@@ -14,7 +14,7 @@ pub struct Broker {
     pub slippage_range: (f64, f64),
     pub portfolio: HashMap<String, Position>,
     pub orders: Vec<Order>,
-    // Next variables are used for analytics
+    // TODO: Next variables are used for analytics, move to a separate struct when doing better analytics
     pub added_funds: f64,
     pub total_placed_orders: i32,
     pub total_exec_orders: i32,
