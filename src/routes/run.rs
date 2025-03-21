@@ -8,7 +8,7 @@ use serde::Deserialize;
 use crate::strategy::sma_crossover::SMACrossoverStrategy;
 
 #[derive(Deserialize)]
-pub struct CreateSimulation {
+pub struct Body {
     parameters: SimulationParameters,
     data: String,
     broker: BrokerSettings,
@@ -34,9 +34,14 @@ struct SlippageSettings {
     max: f64,
 }
 
-pub async fn run(
-    Json(payload): Json<CreateSimulation>,
-) -> (StatusCode, Json<Result<BacktestResult, &'static str>>) {
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+pub enum Response<T> {
+    Success(T),
+    Error(&'static str),
+}
+
+pub async fn run(Json(payload): Json<Body>) -> (StatusCode, Json<Response<BacktestResult>>) {
     let parse_time = |time_str: &str| {
         NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S")
             .map_err(|_| "Invalid date format")
@@ -63,7 +68,7 @@ pub async fn run(
         } else {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(Err("Cannot parse tick duration")),
+                Json(Response::Error("Cannot parse tick duration")),
             );
         };
 
@@ -95,7 +100,10 @@ pub async fn run(
     engine.set_broker(broker);
 
     match engine.run() {
-        Ok(result) => (StatusCode::OK, Json(Ok(result))),
-        Err(error_message) => (StatusCode::INTERNAL_SERVER_ERROR, Json(Err(error_message))),
+        Ok(result) => (StatusCode::OK, Json(Response::Success(result))),
+        Err(error_message) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Response::Error(error_message)),
+        ),
     }
 }
