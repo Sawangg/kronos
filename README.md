@@ -30,6 +30,7 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
       "slippage": {
         "min": 0.01,
         "max": 0.05
+      }
     }
   }'
 ```
