@@ -26,7 +26,7 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
     "data": "AAPL",
     "broker": {
       "cash": 10000.0,
-      "fees": { "Flat": 1.0 }
+      "fees": { "Flat": 1.0 },
       "slippage": {
         "min": 0.01,
         "max": 0.05
