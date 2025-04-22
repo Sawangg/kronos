@@ -1,4 +1,4 @@
 {
   "name": "Kronos Development",
-  "image": "ghcr.io/devcontainers/features/rust:1"
+  "image": "rust:slim"
 }
