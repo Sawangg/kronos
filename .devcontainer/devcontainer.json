@@ -1,4 +1,4 @@
 {
   "name": "Kronos Development",
-  "image": "rust:slim"
+  "image": "mcr.microsoft.com/devcontainers/rust:latest"
 }
