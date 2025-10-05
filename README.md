@@ -32,6 +32,9 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
         "min": 0.01,
         "max": 0.05
       }
+    },
+    "strategy": {
+      "wasm_base64": "..."
     }
   }'
 ```
