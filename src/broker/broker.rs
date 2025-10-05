@@ -191,7 +191,7 @@ impl Broker {
     pub fn portfolio_value(&self, data: &OHLCVData) -> f64 {
         let mut total_value = 0.0;
 
-        for (_asset, position) in &self.portfolio {
+        for position in self.portfolio.values() {
             let current_price = data.close;
             total_value += position.quantity * current_price;
             //println!(

@@ -1,7 +1,7 @@
 use crate::{broker::broker::Broker, data::OHLCVData};
 use chrono::NaiveDateTime;
 
-pub mod sma_crossover;
+pub mod wasm;
 
 pub trait Strategy {
     fn init(&mut self);

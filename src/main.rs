@@ -9,6 +9,8 @@ mod strategy;
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
     let app = Router::new().route("/run", post(run));
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());

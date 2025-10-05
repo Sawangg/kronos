@@ -2,6 +2,7 @@
 
 Fast and versatile backtest framework to test your quantitative strategies. Here is a list of some of the features:
 
+- Implement your strategy with any language that compiles to WebAssembly (Rust, Python, Typescript, C/C++, ...)
 - Fast (less than 3 seconds to backtest 1 year of data with a tick of 1 second)
 - Easy to use, send a simple POST request to start your backtest
 - Can be used with a variety of assets (Stocks, Crypto, ...)
@@ -37,7 +38,6 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
 
 ## Ideas and TODO
 
-- Implement your strategy with any language that compiles to WASM
 - Data source agnostic, provide OHLCV data how you wish
 - Better analytics result with per trade feedback
 - Visualize your strategy using a dedicated frontend. Analyze key performance metrics such as:

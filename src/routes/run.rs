@@ -1,17 +1,22 @@
 use crate::broker::{broker::Broker, fee::FeeType};
 use crate::data::polygon_aggregate;
 use crate::engine::{BacktestResult, Engine};
+use crate::strategy::wasm::WasmStrategy;
 use axum::{http::StatusCode, Json};
 use chrono::{Duration, NaiveDateTime};
 use serde::Deserialize;
-
-use crate::strategy::sma_crossover::SMACrossoverStrategy;
 
 #[derive(Deserialize)]
 pub struct Body {
     parameters: SimulationParameters,
     data: String,
     broker: BrokerSettings,
+    strategy: StrategyConfig,
+}
+
+#[derive(Deserialize)]
+struct StrategyConfig {
+    wasm_base64: String,
 }
 
 #[derive(Deserialize)]
@@ -50,16 +55,34 @@ pub async fn run(Json(payload): Json<Body>) -> (StatusCode, Json<Response<Backte
     let start_date = parse_time(&payload.parameters.start_date).expect("Invalid start_date format");
     let end_date = parse_time(&payload.parameters.end_date).expect("Invalid end_date format");
 
-    // TODO: remove this when WASM based strategies are implemented
-    let strategy = Box::new(SMACrossoverStrategy::new(5, 200));
+    let wasm_bytes = match base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        &payload.strategy.wasm_base64,
+    ) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Response::Error("Invalid base64 encoded WASM")),
+            );
+        }
+    };
+
+    let strategy = match WasmStrategy::new(&wasm_bytes) {
+        Ok(s) => Box::new(s),
+        Err(e) => {
+            eprintln!("Failed to load WASM strategy: {:?}", e);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Response::Error("Failed to load WASM strategy")),
+            );
+        }
+    };
 
     let mut engine = Engine::new(strategy, (start_date, end_date));
 
     if let Some(tick) = &payload.parameters.tick {
-        let duration = if let Ok(value) = tick
-            .trim_end_matches(|c| c == 's' || c == 'n')
-            .parse::<i64>()
-        {
+        let duration = if let Ok(value) = tick.trim_end_matches(['s', 'n']).parse::<i64>() {
             if tick.ends_with("ns") {
                 Duration::new(0, value as u32)
             } else {

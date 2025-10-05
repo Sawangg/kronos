@@ -54,6 +54,8 @@ impl Engine {
     // TODO: cut loop time by optimizing time with trading days for stock assets (45% time decrease)
     // TODO: use unix timestamp instead of chrono for efficiency
     pub fn run(&mut self) -> Result<BacktestResult, &'static str> {
+        let timer = std::time::Instant::now();
+
         self.strategy.init();
 
         if self.data_feed.is_empty() {
@@ -76,13 +78,13 @@ impl Engine {
             if let Some(current_price) = self.data_feed.get(data_index) {
                 self.broker
                     .handle_unfulfilled_orders(&current_time, current_price);
-
-                self.strategy.tick(
-                    &current_time,
-                    &self.data_feed[..=data_index], // all previous data
-                    &mut self.broker,
-                );
             }
+
+            self.strategy.tick(
+                &current_time,
+                &self.data_feed[..=data_index], // all previous data
+                &mut self.broker,
+            );
 
             current_time += self.tick;
 
@@ -92,11 +94,12 @@ impl Engine {
             }
         }
 
-        // Creating feedback data
+        println!("Backtest completed in: {:?}", timer.elapsed());
+
+        // Creating analytics
         let last_tick = self.data_feed.last().expect("No data found");
         let profit = f64::trunc(
-            ((self.broker.cash + self.broker.portfolio_value(&last_tick))
-                - self.broker.added_funds)
+            ((self.broker.cash + self.broker.portfolio_value(last_tick)) - self.broker.added_funds)
                 * 100.0,
         ) / 100.0;
 
@@ -105,7 +108,7 @@ impl Engine {
 
         Ok(BacktestResult {
             cash: f64::trunc(self.broker.cash * 100.0) / 100.0,
-            portfolio_value: f64::trunc(self.broker.portfolio_value(&last_tick) * 100.0) / 100.0,
+            portfolio_value: f64::trunc(self.broker.portfolio_value(last_tick) * 100.0) / 100.0,
             profit,
             profit_percentage,
             num_orders_placed: self.broker.total_placed_orders,
