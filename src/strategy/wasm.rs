@@ -3,7 +3,7 @@ use crate::broker::order::{Order, OrderDirection, OrderType};
 use crate::data::OHLCVData;
 use crate::strategy::Strategy;
 use chrono::NaiveDateTime;
-use std::sync::{Arc, Mutex};
+use std::ptr;
 use wasmtime::*;
 
 pub struct WasmStrategy {
@@ -16,16 +16,22 @@ pub struct WasmStrategy {
 }
 
 struct HostState {
-    broker: Arc<Mutex<Option<Broker>>>,
+    broker_ptr: *mut Broker,
+    memory: Option<Memory>,
 }
+
+unsafe impl Send for HostState {}
 
 impl WasmStrategy {
     pub fn new(wasm_bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
-        let engine = Engine::default();
+        let mut config = Config::new();
+        config.cranelift_opt_level(wasmtime::OptLevel::Speed);
+        let engine = Engine::new(&config)?;
         let module = Module::new(&engine, wasm_bytes)?;
 
         let host_state = HostState {
-            broker: Arc::new(Mutex::new(None)),
+            broker_ptr: ptr::null_mut(),
+            memory: None,
         };
 
         let mut store = Store::new(&engine, host_state);
@@ -35,16 +41,18 @@ impl WasmStrategy {
         let memory_ty = MemoryType::new(16, Some(256));
         let memory = Memory::new(&mut store, memory_ty)?;
         linker.define(&store, "env", "memory", memory)?;
+        
+        store.data_mut().memory = Some(memory);
 
         linker.func_wrap(
             "env",
             "place_market_order",
-            |mut caller: Caller<'_, HostState>,
+             |mut caller: Caller<'_, HostState>,
              asset_ptr: i32,
              asset_len: i32,
              direction: i32,
              size: f64| {
-                let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+                let memory = caller.data().memory.unwrap();
                 let data = memory.data(&caller);
 
                 let asset_bytes = &data[asset_ptr as usize..(asset_ptr + asset_len) as usize];
@@ -64,7 +72,8 @@ impl WasmStrategy {
                     valid_until: None,
                 };
 
-                if let Some(ref mut broker) = *caller.data_mut().broker.lock().unwrap() {
+                unsafe {
+                    let broker = &mut *caller.data_mut().broker_ptr;
                     broker.place_order(order);
                 }
             },
@@ -73,13 +82,13 @@ impl WasmStrategy {
         linker.func_wrap(
             "env",
             "place_limit_order",
-            |mut caller: Caller<'_, HostState>,
+             |mut caller: Caller<'_, HostState>,
              asset_ptr: i32,
              asset_len: i32,
              direction: i32,
              size: f64,
              price: f64| {
-                let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+                let memory = caller.data().memory.unwrap();
                 let data = memory.data(&caller);
 
                 let asset_bytes = &data[asset_ptr as usize..(asset_ptr + asset_len) as usize];
@@ -99,7 +108,8 @@ impl WasmStrategy {
                     valid_until: None,
                 };
 
-                if let Some(ref mut broker) = *caller.data_mut().broker.lock().unwrap() {
+                unsafe {
+                    let broker = &mut *caller.data_mut().broker_ptr;
                     broker.place_order(order);
                 }
             },
@@ -108,13 +118,13 @@ impl WasmStrategy {
         linker.func_wrap(
             "env",
             "place_stop_order",
-            |mut caller: Caller<'_, HostState>,
+             |mut caller: Caller<'_, HostState>,
              asset_ptr: i32,
              asset_len: i32,
              direction: i32,
              size: f64,
              stop_price: f64| {
-                let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+                let memory = caller.data().memory.unwrap();
                 let data = memory.data(&caller);
 
                 let asset_bytes = &data[asset_ptr as usize..(asset_ptr + asset_len) as usize];
@@ -134,38 +144,37 @@ impl WasmStrategy {
                     valid_until: None,
                 };
 
-                if let Some(ref mut broker) = *caller.data_mut().broker.lock().unwrap() {
+                unsafe {
+                    let broker = &mut *caller.data_mut().broker_ptr;
                     broker.place_order(order);
                 }
             },
         )?;
 
         linker.func_wrap("env", "get_cash", |caller: Caller<'_, HostState>| -> f64 {
-            if let Some(ref broker) = *caller.data().broker.lock().unwrap() {
+            unsafe {
+                let broker = &*caller.data().broker_ptr;
                 broker.cash
-            } else {
-                0.0
             }
         })?;
 
         linker.func_wrap(
             "env",
             "get_position",
-            |mut caller: Caller<'_, HostState>, asset_ptr: i32, asset_len: i32| -> f64 {
-                let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+            |caller: Caller<'_, HostState>, asset_ptr: i32, asset_len: i32| -> f64 {
+                let memory = caller.data().memory.unwrap();
                 let data = memory.data(&caller);
 
                 let asset_bytes = &data[asset_ptr as usize..(asset_ptr + asset_len) as usize];
                 let asset = String::from_utf8_lossy(asset_bytes).to_string();
 
-                if let Some(ref broker) = *caller.data().broker.lock().unwrap() {
+                unsafe {
+                    let broker = &*caller.data().broker_ptr;
                     broker
                         .portfolio
                         .get(&asset)
                         .map(|p| p.quantity)
                         .unwrap_or(0.0)
-                } else {
-                    0.0
                 }
             },
         )?;
@@ -173,8 +182,8 @@ impl WasmStrategy {
         linker.func_wrap(
             "env",
             "log",
-            |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| {
-                let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+            |caller: Caller<'_, HostState>, ptr: i32, len: i32| {
+                let memory = caller.data().memory.unwrap();
                 let data = memory.data(&caller);
 
                 let bytes = &data[ptr as usize..(ptr + len) as usize];
@@ -206,16 +215,6 @@ impl WasmStrategy {
             tick_fn,
         })
     }
-
-    #[allow(dead_code)]
-    pub fn set_broker(&mut self, broker: Broker) {
-        *self.store.data_mut().broker.lock().unwrap() = Some(broker);
-    }
-
-    #[allow(dead_code)]
-    pub fn take_broker(&mut self) -> Option<Broker> {
-        self.store.data_mut().broker.lock().unwrap().take()
-    }
 }
 
 impl Strategy for WasmStrategy {
@@ -223,29 +222,26 @@ impl Strategy for WasmStrategy {
         self.init_fn.call(&mut self.store, ()).ok();
     }
 
-    fn tick(&mut self, current_time: &NaiveDateTime, data: &[OHLCVData], broker: &mut Broker) {
-        *self.store.data_mut().broker.lock().unwrap() =
-            Some(std::mem::replace(broker, Broker::new()));
+    fn tick(&mut self, current_time: &NaiveDateTime, data: Option<&OHLCVData>, broker: &mut Broker) {
+        self.store.data_mut().broker_ptr = broker as *mut Broker;
 
-        if let Some(latest) = data.last() {
+        if let Some(current) = data {
             let timestamp = current_time.and_utc().timestamp();
             self.tick_fn
                 .call(
                     &mut self.store,
                     (
                         timestamp,
-                        latest.open,
-                        latest.high,
-                        latest.low,
-                        latest.close,
-                        latest.volume as f64,
+                        current.open,
+                        current.high,
+                        current.low,
+                        current.close,
+                        current.volume as f64,
                     ),
                 )
                 .ok();
         }
 
-        if let Some(updated_broker) = self.store.data_mut().broker.lock().unwrap().take() {
-            *broker = updated_broker;
-        }
+        self.store.data_mut().broker_ptr = ptr::null_mut();
     }
 }

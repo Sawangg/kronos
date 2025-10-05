@@ -3,7 +3,7 @@
 Fast and versatile backtest framework to test your quantitative strategies. Here is a list of some of the features:
 
 - Implement your strategy with any language that compiles to WebAssembly (Rust, Python, Typescript, C/C++, ...)
-- Fast (less than 3 seconds to backtest 1 year of data with a tick of 1 second)
+- Fast (less than 10 seconds to backtest 1 year of data with a tick of 1 second which is around 31 million data points)
 - Easy to use, send a simple POST request to start your backtest
 - Can be used with a variety of assets (Stocks, Crypto, ...)
 - Place market orders, limit orders and stop orders

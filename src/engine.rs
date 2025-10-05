@@ -51,8 +51,7 @@ impl Engine {
         self.tick = tick;
     }
 
-    // TODO: cut loop time by optimizing time with trading days for stock assets (45% time decrease)
-    // TODO: use unix timestamp instead of chrono for efficiency
+    // TODO: cut loop time by optimizing time with trading days for equities (45% time decrease)
     pub fn run(&mut self) -> Result<BacktestResult, &'static str> {
         let timer = std::time::Instant::now();
 
@@ -64,13 +63,26 @@ impl Engine {
 
         let (start_time, end_time) = self.time_range;
 
-        let mut current_time = start_time;
+        let mut current_timestamp = start_time.and_utc().timestamp();
+        let end_timestamp = end_time.and_utc().timestamp();
+        let tick_seconds = self.tick.num_seconds();
+        let last_data_timestamp = self
+            .data_feed
+            .last()
+            .unwrap()
+            .timestamp
+            .and_utc()
+            .timestamp();
         let mut data_index = 0;
 
-        while current_time <= end_time {
+        while current_timestamp <= end_timestamp {
+            let current_time = chrono::DateTime::from_timestamp(current_timestamp, 0)
+                .expect("Invalid timestamp")
+                .naive_utc();
+
             if data_index + 1 < self.data_feed.len() {
                 let next_data = &self.data_feed[data_index + 1];
-                if next_data.timestamp <= current_time {
+                if next_data.timestamp.and_utc().timestamp() <= current_timestamp {
                     data_index += 1;
                 }
             }
@@ -80,16 +92,13 @@ impl Engine {
                     .handle_unfulfilled_orders(&current_time, current_price);
             }
 
-            self.strategy.tick(
-                &current_time,
-                &self.data_feed[..=data_index], // all previous data
-                &mut self.broker,
-            );
+            let current_candle = self.data_feed.get(data_index);
+            self.strategy
+                .tick(&current_time, current_candle, &mut self.broker);
 
-            current_time += self.tick;
+            current_timestamp += tick_seconds;
 
-            // Exit if we've gone past the last data timestamp
-            if current_time > self.data_feed.last().unwrap().timestamp {
+            if current_timestamp > last_data_timestamp {
                 break;
             }
         }

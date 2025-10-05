@@ -14,6 +14,8 @@ pub struct Broker {
     pub slippage_range: (f64, f64),
     pub portfolio: HashMap<String, Position>,
     pub orders: Vec<Order>,
+    slippage_values: Vec<f64>,
+    slippage_index: usize,
     // TODO: Next variables are used for analytics, move to a separate struct when doing better analytics
     pub added_funds: f64,
     pub total_placed_orders: i32,
@@ -30,6 +32,8 @@ impl Broker {
             slippage_range: (0.0, 0.0),
             portfolio: HashMap::new(),
             orders: vec![],
+            slippage_values: vec![],
+            slippage_index: 0,
             added_funds: 0.0,
             total_placed_orders: 0,
             total_exec_orders: 0,
@@ -49,6 +53,14 @@ impl Broker {
 
     pub fn set_slippage(&mut self, min_slippage: f64, max_slippage: f64) {
         self.slippage_range = (min_slippage, max_slippage);
+
+        self.slippage_values = Vec::with_capacity(10000);
+        let mut rng = rand::rng();
+        for _ in 0..10000 {
+            self.slippage_values
+                .push(rng.random_range(min_slippage..=max_slippage));
+        }
+        self.slippage_index = 0;
     }
 
     pub fn place_order(&mut self, order: Order) {
@@ -56,6 +68,7 @@ impl Broker {
         self.orders.push(order);
     }
 
+    #[inline]
     fn calculate_fees(&mut self, amount: f64) -> f64 {
         match &self.fee_type {
             Some(FeeType::Flat(fee)) => *fee,
@@ -64,8 +77,8 @@ impl Broker {
         }
     }
 
-    // NOTE: If the execution of an order failed, we ignore it with i += 1 instead of throwing an
-    // error for now
+    // NOTE: If the execution of an order failed, we ignore it with i += 1 instead of throwing an error for now
+    #[inline]
     pub fn handle_unfulfilled_orders(
         &mut self,
         current_time: &NaiveDateTime,
@@ -78,7 +91,7 @@ impl Broker {
             // Remove order if expired
             if let Some(valid_until) = order.valid_until {
                 if current_time > &valid_until {
-                    self.orders.remove(i);
+                    self.orders.swap_remove(i);
                     continue;
                 }
             }
@@ -90,7 +103,7 @@ impl Broker {
                         i += 1;
                     } else {
                         self.total_exec_orders += 1;
-                        self.orders.remove(i);
+                        self.orders.swap_remove(i);
                     }
                 }
                 OrderType::Limit(price) => {
@@ -102,7 +115,7 @@ impl Broker {
                             i += 1;
                         } else {
                             self.total_exec_orders += 1;
-                            self.orders.remove(i);
+                            self.orders.swap_remove(i);
                         }
                     } else {
                         i += 1;
@@ -117,7 +130,7 @@ impl Broker {
                             i += 1;
                         } else {
                             self.total_exec_orders += 1;
-                            self.orders.remove(i);
+                            self.orders.swap_remove(i);
                         }
                     } else {
                         i += 1;
@@ -127,11 +140,15 @@ impl Broker {
         }
     }
 
-    // NOTE: We could calculate the slippage based on the trade size, implied volatility for a
-    // more accurate result. For now simply use a random range
-    fn apply_slippage(&self, market_price: f64) -> f64 {
+    #[inline]
+    fn apply_slippage(&mut self, market_price: f64) -> f64 {
+        if self.slippage_values.is_empty() {
+            return market_price;
+        }
+
         let slippage_percentage =
-            rand::rng().random_range(self.slippage_range.0..=self.slippage_range.1);
+            self.slippage_values[self.slippage_index % self.slippage_values.len()];
+        self.slippage_index += 1;
         market_price * (1.0 + slippage_percentage)
     }
 
