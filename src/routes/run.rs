@@ -1,4 +1,4 @@
-use crate::broker::{broker::Broker, fee::FeeType};
+use crate::broker::{fee::FeeType, Broker};
 use crate::data::polygon_aggregate;
 use crate::engine::{BacktestResult, Engine};
 use crate::strategy::wasm::WasmStrategy;
@@ -47,13 +47,20 @@ pub enum Response<T> {
 }
 
 pub async fn run(Json(payload): Json<Body>) -> (StatusCode, Json<Response<BacktestResult>>) {
-    let parse_time = |time_str: &str| {
+    let parse_time = |time_str: &str| -> Result<NaiveDateTime, &'static str> {
         NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S")
             .map_err(|_| "Invalid date format")
     };
 
-    let start_date = parse_time(&payload.parameters.start_date).expect("Invalid start_date format");
-    let end_date = parse_time(&payload.parameters.end_date).expect("Invalid end_date format");
+    let start_date = match parse_time(&payload.parameters.start_date) {
+        Ok(date) => date,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(Response::Error(e))),
+    };
+
+    let end_date = match parse_time(&payload.parameters.end_date) {
+        Ok(date) => date,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(Response::Error(e))),
+    };
 
     let wasm_bytes = match base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
@@ -82,24 +89,34 @@ pub async fn run(Json(payload): Json<Body>) -> (StatusCode, Json<Response<Backte
     let mut engine = Engine::new(strategy, (start_date, end_date));
 
     if let Some(tick) = &payload.parameters.tick {
-        let duration = if let Ok(value) = tick.trim_end_matches(['s', 'n']).parse::<i64>() {
-            if tick.ends_with("ns") {
-                Duration::new(0, value as u32)
-            } else {
-                Duration::new(value, 0)
+        let duration = match tick.trim_end_matches(['s', 'n']).parse::<i64>() {
+            Ok(value) => {
+                if tick.ends_with("ns") {
+                    Duration::new(0, value as u32)
+                } else {
+                    Duration::new(value, 0)
+                }
             }
-        } else {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(Response::Error("Cannot parse tick duration")),
-            );
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(Response::Error("Cannot parse tick duration")),
+                );
+            }
         };
 
-        engine.set_tick(duration.expect("Cannot parse tick duration"));
+        match duration {
+            Some(d) => engine.set_tick(d),
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(Response::Error("Invalid tick duration value")),
+                );
+            }
+        }
     }
 
-    // TODO: Bring your own data
-    let data_feed = polygon_aggregate(
+    let data_feed = match polygon_aggregate(
         &payload.data,
         1,
         "day",
@@ -107,7 +124,16 @@ pub async fn run(Json(payload): Json<Body>) -> (StatusCode, Json<Response<Backte
         &payload.parameters.end_date[..10],
     )
     .await
-    .expect("Failed to fetch OHLCV data");
+    {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Failed to fetch OHLCV data: {:?}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Response::Error("Failed to fetch OHLCV data")),
+            );
+        }
+    };
 
     engine.add_data(data_feed);
 

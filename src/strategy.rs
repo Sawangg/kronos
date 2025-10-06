@@ -1,4 +1,4 @@
-use crate::{broker::broker::Broker, data::OHLCVData};
+use crate::{broker::Broker, data::OHLCVData};
 use chrono::NaiveDateTime;
 
 pub mod wasm;

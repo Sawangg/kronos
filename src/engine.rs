@@ -1,4 +1,4 @@
-use crate::broker::broker::Broker;
+use crate::broker::Broker;
 use crate::data::OHLCVData;
 use crate::strategy::Strategy;
 use chrono::{Duration, NaiveDateTime};
@@ -108,22 +108,23 @@ impl Engine {
         // Creating analytics
         let last_tick = self.data_feed.last().expect("No data found");
         let profit = f64::trunc(
-            ((self.broker.cash + self.broker.portfolio_value(last_tick)) - self.broker.added_funds)
+            ((self.broker.cash + self.broker.portfolio_value(last_tick))
+                - self.broker.analytics.added_funds)
                 * 100.0,
         ) / 100.0;
 
         let profit_percentage =
-            f64::trunc(((profit / self.broker.added_funds) * 100.0) * 100.0) / 100.0;
+            f64::trunc(((profit / self.broker.analytics.added_funds) * 100.0) * 100.0) / 100.0;
 
         Ok(BacktestResult {
             cash: f64::trunc(self.broker.cash * 100.0) / 100.0,
             portfolio_value: f64::trunc(self.broker.portfolio_value(last_tick) * 100.0) / 100.0,
             profit,
             profit_percentage,
-            num_orders_placed: self.broker.total_placed_orders,
-            num_orders_executed: self.broker.total_exec_orders,
-            total_fees: self.broker.total_fees,
-            total_slippage: self.broker.total_slippage,
+            num_orders_placed: self.broker.analytics.total_placed_orders,
+            num_orders_executed: self.broker.analytics.total_exec_orders,
+            total_fees: self.broker.analytics.total_fees,
+            total_slippage: self.broker.analytics.total_slippage,
         })
     }
 }

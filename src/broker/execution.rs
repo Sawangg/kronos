@@ -8,6 +8,26 @@ use chrono::NaiveDateTime;
 use rand::Rng;
 use std::collections::HashMap;
 
+pub struct BrokerAnalytics {
+    pub added_funds: f64,
+    pub total_placed_orders: i32,
+    pub total_exec_orders: i32,
+    pub total_fees: f64,
+    pub total_slippage: f64,
+}
+
+impl BrokerAnalytics {
+    pub fn new() -> Self {
+        BrokerAnalytics {
+            added_funds: 0.0,
+            total_placed_orders: 0,
+            total_exec_orders: 0,
+            total_fees: 0.0,
+            total_slippage: 0.0,
+        }
+    }
+}
+
 pub struct Broker {
     pub cash: f64,
     pub fee_type: Option<FeeType>,
@@ -16,12 +36,7 @@ pub struct Broker {
     pub orders: Vec<Order>,
     slippage_values: Vec<f64>,
     slippage_index: usize,
-    // TODO: Next variables are used for analytics, move to a separate struct when doing better analytics
-    pub added_funds: f64,
-    pub total_placed_orders: i32,
-    pub total_exec_orders: i32,
-    pub total_fees: f64,
-    pub total_slippage: f64,
+    pub analytics: BrokerAnalytics,
 }
 
 impl Broker {
@@ -34,16 +49,12 @@ impl Broker {
             orders: vec![],
             slippage_values: vec![],
             slippage_index: 0,
-            added_funds: 0.0,
-            total_placed_orders: 0,
-            total_exec_orders: 0,
-            total_fees: 0.0,
-            total_slippage: 0.0,
+            analytics: BrokerAnalytics::new(),
         }
     }
 
     pub fn set_cash(&mut self, cash: f64) {
-        self.added_funds += cash;
+        self.analytics.added_funds += cash;
         self.cash = cash;
     }
 
@@ -64,7 +75,7 @@ impl Broker {
     }
 
     pub fn place_order(&mut self, order: Order) {
-        self.total_placed_orders += 1;
+        self.analytics.total_placed_orders += 1;
         self.orders.push(order);
     }
 
@@ -77,7 +88,20 @@ impl Broker {
         }
     }
 
-    // NOTE: If the execution of an order failed, we ignore it with i += 1 instead of throwing an error for now
+    #[inline]
+    fn try_execute_and_remove(&mut self, i: &mut usize, order: &Order, price: f64) {
+        match self.execute_order(order.clone(), price) {
+            Ok(_) => {
+                self.analytics.total_exec_orders += 1;
+                self.orders.swap_remove(*i);
+            }
+            Err(e) => {
+                eprintln!("Failed to execute order: {}", e);
+                *i += 1;
+            }
+        }
+    }
+
     #[inline]
     pub fn handle_unfulfilled_orders(
         &mut self,
@@ -86,9 +110,8 @@ impl Broker {
     ) {
         let mut i = 0;
         while i < self.orders.len() {
-            let order = &self.orders[i];
+            let order = self.orders[i].clone();
 
-            // Remove order if expired
             if let Some(valid_until) = order.valid_until {
                 if current_time > &valid_until {
                     self.orders.swap_remove(i);
@@ -98,25 +121,13 @@ impl Broker {
 
             match order.order_type {
                 OrderType::Market => {
-                    if let Err(e) = self.execute_order(order.clone(), current_price.open) {
-                        eprintln!("Failed to execute order: {}", e);
-                        i += 1;
-                    } else {
-                        self.total_exec_orders += 1;
-                        self.orders.swap_remove(i);
-                    }
+                    self.try_execute_and_remove(&mut i, &order, current_price.open);
                 }
                 OrderType::Limit(price) => {
                     if (order.direction == OrderDirection::Buy && current_price.open <= price)
                         || (order.direction == OrderDirection::Sell && current_price.open >= price)
                     {
-                        if let Err(e) = self.execute_order(order.clone(), current_price.open) {
-                            eprintln!("Failed to execute limit order: {}", e);
-                            i += 1;
-                        } else {
-                            self.total_exec_orders += 1;
-                            self.orders.swap_remove(i);
-                        }
+                        self.try_execute_and_remove(&mut i, &order, current_price.open);
                     } else {
                         i += 1;
                     }
@@ -125,13 +136,7 @@ impl Broker {
                     if (order.direction == OrderDirection::Buy && current_price.open >= price)
                         || (order.direction == OrderDirection::Sell && current_price.open <= price)
                     {
-                        if let Err(e) = self.execute_order(order.clone(), current_price.open) {
-                            eprintln!("Failed to execute stop order: {}", e);
-                            i += 1;
-                        } else {
-                            self.total_exec_orders += 1;
-                            self.orders.swap_remove(i);
-                        }
+                        self.try_execute_and_remove(&mut i, &order, current_price.open);
                     } else {
                         i += 1;
                     }
@@ -155,7 +160,7 @@ impl Broker {
     fn execute_order(&mut self, order: Order, market_price: f64) -> Result<(), String> {
         let execution_price = self.apply_slippage(market_price);
         let slippage_diff = execution_price - market_price;
-        self.total_slippage += slippage_diff * order.size;
+        self.analytics.total_slippage += slippage_diff * order.size;
 
         match order.direction {
             OrderDirection::Buy => {
@@ -165,7 +170,7 @@ impl Broker {
 
                 if self.cash >= total_spent {
                     self.cash -= total_spent;
-                    self.total_fees += fees;
+                    self.analytics.total_fees += fees;
 
                     let position = self
                         .portfolio
@@ -183,23 +188,22 @@ impl Broker {
                 let fees = self.calculate_fees(total_raw_value);
                 let total_value = total_raw_value - fees;
 
-                if let Some(position) = self.portfolio.get_mut(&order.asset) {
-                    if position.quantity < order.size {
-                        Err("Not enough quantity to sell".to_string())
-                    } else if let Err(e) = position.remove(order.size) {
-                        Err(e)
-                    } else {
-                        self.cash += total_value;
-                        self.total_fees += fees;
+                let Some(position) = self.portfolio.get_mut(&order.asset) else {
+                    return Err("Position not found in portfolio".to_string());
+                };
 
-                        if position.quantity == 0.0 {
-                            self.portfolio.remove(&order.asset);
-                        }
-                        Ok(())
-                    }
-                } else {
-                    Err("Position not found in portfolio".to_string())
+                if position.quantity < order.size {
+                    return Err("Not enough quantity to sell".to_string());
                 }
+
+                position.remove(order.size)?;
+                self.cash += total_value;
+                self.analytics.total_fees += fees;
+
+                if position.quantity == 0.0 {
+                    self.portfolio.remove(&order.asset);
+                }
+                Ok(())
             }
         }
     }
@@ -254,8 +258,8 @@ mod tests {
         };
         broker.place_order(order);
 
-        assert_eq!(broker.total_placed_orders, 1);
-        assert_eq!(broker.total_exec_orders, 0);
+        assert_eq!(broker.analytics.total_placed_orders, 1);
+        assert_eq!(broker.analytics.total_exec_orders, 0);
         assert_eq!(broker.orders.len(), 1);
         assert_eq!(broker.orders[0].asset, "AAPL");
         assert_eq!(broker.orders[0].direction, OrderDirection::Buy);

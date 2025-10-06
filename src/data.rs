@@ -35,14 +35,15 @@ pub async fn polygon_aggregate(
     let mut data = Vec::new();
     if let Some(results) = body.get("results").and_then(|r| r.as_array()) {
         for result in results {
-            let timestamp = result["t"].as_i64().unwrap();
-            let open = result["o"].as_f64().unwrap();
-            let high = result["h"].as_f64().unwrap();
-            let low = result["l"].as_f64().unwrap();
-            let close = result["c"].as_f64().unwrap();
-            let volume = result["v"].as_f64().unwrap() as u64;
+            let timestamp = result["t"].as_i64().ok_or("Missing timestamp field")?;
+            let open = result["o"].as_f64().ok_or("Missing open field")?;
+            let high = result["h"].as_f64().ok_or("Missing high field")?;
+            let low = result["l"].as_f64().ok_or("Missing low field")?;
+            let close = result["c"].as_f64().ok_or("Missing close field")?;
+            let volume = result["v"].as_f64().ok_or("Missing volume field")? as u64;
 
-            let ts = DateTime::from_timestamp(timestamp / 1000, 0).expect("Invalid timestamp");
+            let ts =
+                DateTime::from_timestamp(timestamp / 1000, 0).ok_or("Invalid timestamp value")?;
             data.push(OHLCVData {
                 timestamp: ts.naive_utc(),
                 open,

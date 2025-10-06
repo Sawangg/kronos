@@ -1,5 +1,5 @@
-use crate::broker::broker::Broker;
 use crate::broker::order::{Order, OrderDirection, OrderType};
+use crate::broker::Broker;
 use crate::data::OHLCVData;
 use crate::strategy::Strategy;
 use chrono::NaiveDateTime;
@@ -8,7 +8,6 @@ use wasmtime::*;
 
 pub struct WasmStrategy {
     _engine: Engine,
-    _module: Module,
     store: Store<HostState>,
     _instance: Instance,
     init_fn: TypedFunc<(), ()>,
@@ -21,6 +20,13 @@ struct HostState {
 }
 
 unsafe impl Send for HostState {}
+
+fn read_string_from_memory(caller: &Caller<'_, HostState>, ptr: i32, len: i32) -> String {
+    let memory = caller.data().memory.unwrap();
+    let data = memory.data(caller);
+    let bytes = &data[ptr as usize..(ptr + len) as usize];
+    String::from_utf8_lossy(bytes).to_string()
+}
 
 impl WasmStrategy {
     pub fn new(wasm_bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
@@ -41,22 +47,18 @@ impl WasmStrategy {
         let memory_ty = MemoryType::new(16, Some(256));
         let memory = Memory::new(&mut store, memory_ty)?;
         linker.define(&store, "env", "memory", memory)?;
-        
+
         store.data_mut().memory = Some(memory);
 
         linker.func_wrap(
             "env",
             "place_market_order",
-             |mut caller: Caller<'_, HostState>,
+            |mut caller: Caller<'_, HostState>,
              asset_ptr: i32,
              asset_len: i32,
              direction: i32,
              size: f64| {
-                let memory = caller.data().memory.unwrap();
-                let data = memory.data(&caller);
-
-                let asset_bytes = &data[asset_ptr as usize..(asset_ptr + asset_len) as usize];
-                let asset = String::from_utf8_lossy(asset_bytes).to_string();
+                let asset = read_string_from_memory(&caller, asset_ptr, asset_len);
 
                 let order_direction = match direction {
                     0 => OrderDirection::Buy,
@@ -82,17 +84,13 @@ impl WasmStrategy {
         linker.func_wrap(
             "env",
             "place_limit_order",
-             |mut caller: Caller<'_, HostState>,
+            |mut caller: Caller<'_, HostState>,
              asset_ptr: i32,
              asset_len: i32,
              direction: i32,
              size: f64,
              price: f64| {
-                let memory = caller.data().memory.unwrap();
-                let data = memory.data(&caller);
-
-                let asset_bytes = &data[asset_ptr as usize..(asset_ptr + asset_len) as usize];
-                let asset = String::from_utf8_lossy(asset_bytes).to_string();
+                let asset = read_string_from_memory(&caller, asset_ptr, asset_len);
 
                 let order_direction = match direction {
                     0 => OrderDirection::Buy,
@@ -118,17 +116,13 @@ impl WasmStrategy {
         linker.func_wrap(
             "env",
             "place_stop_order",
-             |mut caller: Caller<'_, HostState>,
+            |mut caller: Caller<'_, HostState>,
              asset_ptr: i32,
              asset_len: i32,
              direction: i32,
              size: f64,
              stop_price: f64| {
-                let memory = caller.data().memory.unwrap();
-                let data = memory.data(&caller);
-
-                let asset_bytes = &data[asset_ptr as usize..(asset_ptr + asset_len) as usize];
-                let asset = String::from_utf8_lossy(asset_bytes).to_string();
+                let asset = read_string_from_memory(&caller, asset_ptr, asset_len);
 
                 let order_direction = match direction {
                     0 => OrderDirection::Buy,
@@ -162,11 +156,7 @@ impl WasmStrategy {
             "env",
             "get_position",
             |caller: Caller<'_, HostState>, asset_ptr: i32, asset_len: i32| -> f64 {
-                let memory = caller.data().memory.unwrap();
-                let data = memory.data(&caller);
-
-                let asset_bytes = &data[asset_ptr as usize..(asset_ptr + asset_len) as usize];
-                let asset = String::from_utf8_lossy(asset_bytes).to_string();
+                let asset = read_string_from_memory(&caller, asset_ptr, asset_len);
 
                 unsafe {
                     let broker = &*caller.data().broker_ptr;
@@ -208,7 +198,6 @@ impl WasmStrategy {
 
         Ok(WasmStrategy {
             _engine: engine,
-            _module: module,
             store,
             _instance: instance,
             init_fn,
@@ -222,7 +211,12 @@ impl Strategy for WasmStrategy {
         self.init_fn.call(&mut self.store, ()).ok();
     }
 
-    fn tick(&mut self, current_time: &NaiveDateTime, data: Option<&OHLCVData>, broker: &mut Broker) {
+    fn tick(
+        &mut self,
+        current_time: &NaiveDateTime,
+        data: Option<&OHLCVData>,
+        broker: &mut Broker,
+    ) {
         self.store.data_mut().broker_ptr = broker as *mut Broker;
 
         if let Some(current) = data {
