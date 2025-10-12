@@ -114,6 +114,9 @@ impl Engine {
         let cash = self.broker.cash;
         let portfolio_value = self.broker.portfolio_value(last_tick);
 
+        let first_price = self.data_feed.first().map(|d| d.open);
+        let last_price = self.data_feed.last().map(|d| d.close);
+
         let metrics = GlobalMetrics::calculate(
             &closed_trades,
             equity_curve,
@@ -125,6 +128,9 @@ impl Engine {
             self.broker.analytics.total_exec_orders,
             tracker.total_fees,
             tracker.total_slippage,
+            first_price,
+            last_price,
+            &self.broker.fee_type,
         );
 
         Ok(BacktestResult {

@@ -9,6 +9,10 @@ Fast and versatile backtest framework to test your quantitative strategies. Here
 - Place market orders, limit orders and stop orders
 - Able to simulate down to a precision of 1 nanosecond for HFT strategies
 - Detailed metrics about your strategy performance with per trade analysis
+  - Strategy performance: ROI, Sharpe ratio, max drawdown, net profit
+  - Buy & hold benchmark: Compare your strategy against a simple buy-and-hold approach
+  - Trade statistics: Win rate, profit factor, average win/loss, trade duration
+  - Execution metrics: Number of orders placed/executed, total fees and slippage
 - Configurable slippage for a more realistic result
 
 > [!IMPORTANT]
@@ -44,9 +48,8 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
 
 ## Ideas and TODO
 
-- Benchmark strategy against a buy and hold strategy & indexes on the same period
-- Calculate taxes impact on your strategy performance
 - Visualize your strategy using a dedicated frontend
+- Calculate taxes impact on your strategy performance
 - Support for derivatives (Futures, Options, Warrants, ...)
 - Support for Stop-Limit orders
 - Support multiple instruments in one simulation for complex strategies

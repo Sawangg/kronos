@@ -1,4 +1,5 @@
 use super::trade::Trade;
+use crate::broker::fee::FeeType;
 use chrono::{Duration, NaiveDateTime};
 use serde::Serialize;
 
@@ -28,6 +29,9 @@ pub struct GlobalMetrics {
     pub winning_trades: usize,
     pub losing_trades: usize,
     pub avg_trade_duration_hours: f64,
+    pub buy_hold_roi: f64,
+    pub buy_hold_final_value: f64,
+    pub buy_hold_net_profit: f64,
 }
 
 impl GlobalMetrics {
@@ -42,6 +46,9 @@ impl GlobalMetrics {
         num_orders_executed: i32,
         total_fees: f64,
         total_slippage: f64,
+        first_price: Option<f64>,
+        last_price: Option<f64>,
+        fee_type: &Option<FeeType>,
     ) -> Self {
         if trades.is_empty() {
             return Self::default();
@@ -139,6 +146,13 @@ impl GlobalMetrics {
             0.0
         };
 
+        let (buy_hold_roi, buy_hold_final_value, buy_hold_net_profit) =
+            if let (Some(first), Some(last)) = (first_price, last_price) {
+                Self::calculate_buy_and_hold(initial_capital, first, last, fee_type)
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+
         GlobalMetrics {
             cash: f64::trunc(cash * 100.0) / 100.0,
             portfolio_value: f64::trunc(portfolio_value * 100.0) / 100.0,
@@ -164,6 +178,9 @@ impl GlobalMetrics {
             winning_trades: winning_trades.len(),
             losing_trades: losing_trades.len(),
             avg_trade_duration_hours,
+            buy_hold_roi: f64::trunc(buy_hold_roi * 100.0) / 100.0,
+            buy_hold_final_value: f64::trunc(buy_hold_final_value * 100.0) / 100.0,
+            buy_hold_net_profit: f64::trunc(buy_hold_net_profit * 100.0) / 100.0,
         }
     }
 
@@ -238,6 +255,43 @@ impl GlobalMetrics {
 
         (max_drawdown, max_drawdown_duration.num_days())
     }
+
+    fn calculate_buy_and_hold(
+        initial_capital: f64,
+        first_price: f64,
+        last_price: f64,
+        fee_type: &Option<FeeType>,
+    ) -> (f64, f64, f64) {
+        if first_price <= 0.0 || last_price <= 0.0 || initial_capital <= 0.0 {
+            return (0.0, 0.0, 0.0);
+        }
+
+        let buy_fee = match fee_type {
+            Some(FeeType::Flat(fee)) => *fee,
+            Some(FeeType::Percentage(percentage)) => initial_capital * percentage,
+            None => 0.0,
+        };
+
+        let capital_after_buy_fee = initial_capital - buy_fee;
+        if capital_after_buy_fee <= 0.0 {
+            return (0.0, 0.0, 0.0);
+        }
+
+        let shares = capital_after_buy_fee / first_price;
+        let value_before_sell = shares * last_price;
+
+        let sell_fee = match fee_type {
+            Some(FeeType::Flat(fee)) => *fee,
+            Some(FeeType::Percentage(percentage)) => value_before_sell * percentage,
+            None => 0.0,
+        };
+
+        let final_value = value_before_sell - sell_fee;
+        let net_profit = final_value - initial_capital;
+        let roi = (net_profit / initial_capital) * 100.0;
+
+        (roi, final_value, net_profit)
+    }
 }
 
 impl Default for GlobalMetrics {
@@ -267,6 +321,9 @@ impl Default for GlobalMetrics {
             winning_trades: 0,
             losing_trades: 0,
             avg_trade_duration_hours: 0.0,
+            buy_hold_roi: 0.0,
+            buy_hold_final_value: 0.0,
+            buy_hold_net_profit: 0.0,
         }
     }
 }
