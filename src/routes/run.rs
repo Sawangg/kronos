@@ -1,5 +1,5 @@
 use crate::broker::{fee::FeeType, Broker};
-use crate::data::polygon_aggregate;
+use crate::data::OHLCVData;
 use crate::engine::{BacktestResult, Engine};
 use crate::strategy::wasm::WasmStrategy;
 use axum::{http::StatusCode, Json};
@@ -9,14 +9,19 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct Body {
     parameters: SimulationParameters,
-    data: String,
+    data: DataInput,
     broker: BrokerSettings,
     strategy: StrategyConfig,
 }
 
 #[derive(Deserialize)]
+struct DataInput {
+    source: Vec<OHLCVData>,
+}
+
+#[derive(Deserialize)]
 struct StrategyConfig {
-    wasm_base64: String,
+    wasm: String,
 }
 
 #[derive(Deserialize)]
@@ -64,7 +69,7 @@ pub async fn run(Json(payload): Json<Body>) -> (StatusCode, Json<Response<Backte
 
     let wasm_bytes = match base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
-        &payload.strategy.wasm_base64,
+        &payload.strategy.wasm,
     ) {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -116,26 +121,7 @@ pub async fn run(Json(payload): Json<Body>) -> (StatusCode, Json<Response<Backte
         }
     }
 
-    let data_feed = match polygon_aggregate(
-        &payload.data,
-        1,
-        "day",
-        &payload.parameters.start_date[..10],
-        &payload.parameters.end_date[..10],
-    )
-    .await
-    {
-        Ok(data) => data,
-        Err(e) => {
-            eprintln!("Failed to fetch OHLCV data: {:?}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Response::Error("Failed to fetch OHLCV data")),
-            );
-        }
-    };
-
-    engine.add_data(data_feed);
+    engine.add_data(payload.data.source);
 
     let mut broker = Broker::new();
     broker.set_cash(payload.broker.cash);

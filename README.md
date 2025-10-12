@@ -3,9 +3,9 @@
 Fast and versatile backtest framework to test your quantitative strategies. Here is a list of some of the features:
 
 - Implement your strategy with any language that compiles to WebAssembly (Rust, Python, Typescript, C/C++, ...)
+- Data source agnostic, can be used with a variety of assets (stocks, crypto, ...) by providing OHLCV data how you wish
 - Fast (less than 10 seconds to backtest 1 year of data with a tick of 1 second which is around 31 million data points)
 - Easy to use, send a simple POST request to start your backtest
-- Can be used with a variety of assets (Stocks, Crypto, ...)
 - Place market orders, limit orders and stop orders
 - Able to simulate down to a precision of 1 nanosecond for HFT strategies
 - Detailed metrics about your strategy performance with per trade analysis
@@ -25,7 +25,9 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
       "end_date": "2025-02-17 00:00:00",
       "tick": "1m"
     },
-    "data": "AAPL",
+    "data": {
+      "source": "..."
+    },
     "broker": {
       "cash": 10000.0,
       "fees": { "Flat": 1.0 },
@@ -35,14 +37,13 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
       }
     },
     "strategy": {
-      "wasm_base64": "..."
+      "wasm": "..."
     }
   }'
 ```
 
 ## Ideas and TODO
 
-- Data source agnostic, provide OHLCV data how you wish
 - Benchmark strategy against a buy and hold strategy & indexes on the same period
 - Calculate taxes impact on your strategy performance
 - Visualize your strategy using a dedicated frontend
