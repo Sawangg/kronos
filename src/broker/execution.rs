@@ -1,3 +1,4 @@
+use crate::analytics::tracker::TradeTracker;
 use crate::broker::{
     fee::FeeType,
     order::{Order, OrderDirection, OrderType},
@@ -8,22 +9,16 @@ use chrono::NaiveDateTime;
 use rand::Rng;
 use std::collections::HashMap;
 
-pub struct BrokerAnalytics {
-    pub added_funds: f64,
+pub struct BrokerMetrics {
     pub total_placed_orders: i32,
     pub total_exec_orders: i32,
-    pub total_fees: f64,
-    pub total_slippage: f64,
 }
 
-impl BrokerAnalytics {
+impl BrokerMetrics {
     pub fn new() -> Self {
-        BrokerAnalytics {
-            added_funds: 0.0,
+        BrokerMetrics {
             total_placed_orders: 0,
             total_exec_orders: 0,
-            total_fees: 0.0,
-            total_slippage: 0.0,
         }
     }
 }
@@ -36,7 +31,8 @@ pub struct Broker {
     pub orders: Vec<Order>,
     slippage_values: Vec<f64>,
     slippage_index: usize,
-    pub analytics: BrokerAnalytics,
+    pub analytics: BrokerMetrics,
+    pub trade_tracker: TradeTracker,
 }
 
 impl Broker {
@@ -49,12 +45,13 @@ impl Broker {
             orders: vec![],
             slippage_values: vec![],
             slippage_index: 0,
-            analytics: BrokerAnalytics::new(),
+            analytics: BrokerMetrics::new(),
+            trade_tracker: TradeTracker::new(),
         }
     }
 
     pub fn set_cash(&mut self, cash: f64) {
-        self.analytics.added_funds += cash;
+        self.trade_tracker.set_initial_capital(cash);
         self.cash = cash;
     }
 
@@ -89,8 +86,14 @@ impl Broker {
     }
 
     #[inline]
-    fn try_execute_and_remove(&mut self, i: &mut usize, order: &Order, price: f64) {
-        match self.execute_order(order.clone(), price) {
+    fn try_execute_and_remove(
+        &mut self,
+        i: &mut usize,
+        order: &Order,
+        price: f64,
+        current_time: &NaiveDateTime,
+    ) {
+        match self.execute_order(order.clone(), price, current_time) {
             Ok(_) => {
                 self.analytics.total_exec_orders += 1;
                 self.orders.swap_remove(*i);
@@ -121,13 +124,18 @@ impl Broker {
 
             match order.order_type {
                 OrderType::Market => {
-                    self.try_execute_and_remove(&mut i, &order, current_price.open);
+                    self.try_execute_and_remove(&mut i, &order, current_price.open, current_time);
                 }
                 OrderType::Limit(price) => {
                     if (order.direction == OrderDirection::Buy && current_price.open <= price)
                         || (order.direction == OrderDirection::Sell && current_price.open >= price)
                     {
-                        self.try_execute_and_remove(&mut i, &order, current_price.open);
+                        self.try_execute_and_remove(
+                            &mut i,
+                            &order,
+                            current_price.open,
+                            current_time,
+                        );
                     } else {
                         i += 1;
                     }
@@ -136,7 +144,12 @@ impl Broker {
                     if (order.direction == OrderDirection::Buy && current_price.open >= price)
                         || (order.direction == OrderDirection::Sell && current_price.open <= price)
                     {
-                        self.try_execute_and_remove(&mut i, &order, current_price.open);
+                        self.try_execute_and_remove(
+                            &mut i,
+                            &order,
+                            current_price.open,
+                            current_time,
+                        );
                     } else {
                         i += 1;
                     }
@@ -157,10 +170,14 @@ impl Broker {
         market_price * (1.0 + slippage_percentage)
     }
 
-    fn execute_order(&mut self, order: Order, market_price: f64) -> Result<(), String> {
+    fn execute_order(
+        &mut self,
+        order: Order,
+        market_price: f64,
+        current_time: &NaiveDateTime,
+    ) -> Result<(), String> {
         let execution_price = self.apply_slippage(market_price);
         let slippage_diff = execution_price - market_price;
-        self.analytics.total_slippage += slippage_diff * order.size;
 
         match order.direction {
             OrderDirection::Buy => {
@@ -170,7 +187,6 @@ impl Broker {
 
                 if self.cash >= total_spent {
                     self.cash -= total_spent;
-                    self.analytics.total_fees += fees;
 
                     let position = self
                         .portfolio
@@ -178,6 +194,16 @@ impl Broker {
                         .or_insert_with(|| Position::new(0.0, execution_price));
 
                     position.update(order.size, execution_price);
+
+                    self.trade_tracker.record_buy(
+                        &order.asset,
+                        *current_time,
+                        execution_price,
+                        order.size,
+                        fees,
+                        slippage_diff.abs(),
+                    );
+
                     Ok(())
                 } else {
                     Err("Not enough cash".to_string())
@@ -198,7 +224,15 @@ impl Broker {
 
                 position.remove(order.size)?;
                 self.cash += total_value;
-                self.analytics.total_fees += fees;
+
+                self.trade_tracker.record_sell(
+                    &order.asset,
+                    *current_time,
+                    execution_price,
+                    order.size,
+                    fees,
+                    slippage_diff.abs(),
+                );
 
                 if position.quantity == 0.0 {
                     self.portfolio.remove(&order.asset);

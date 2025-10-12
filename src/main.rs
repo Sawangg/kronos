@@ -1,6 +1,7 @@
 use crate::routes::run::run;
 use axum::{routing::post, Router};
 
+mod analytics;
 mod broker;
 mod data;
 mod engine;

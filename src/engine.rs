@@ -1,3 +1,4 @@
+use crate::analytics::{metrics::GlobalMetrics, trade::Trade};
 use crate::broker::Broker;
 use crate::data::OHLCVData;
 use crate::strategy::Strategy;
@@ -6,14 +7,8 @@ use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct BacktestResult {
-    pub cash: f64,
-    pub portfolio_value: f64,
-    pub profit: f64,
-    pub profit_percentage: f64,
-    pub num_orders_placed: i32,
-    pub num_orders_executed: i32,
-    pub total_fees: f64,
-    pub total_slippage: f64,
+    pub trades: Vec<Trade>,
+    pub metrics: GlobalMetrics,
 }
 
 pub struct Engine {
@@ -90,6 +85,11 @@ impl Engine {
             if let Some(current_price) = self.data_feed.get(data_index) {
                 self.broker
                     .handle_unfulfilled_orders(&current_time, current_price);
+
+                let total_equity = self.broker.cash + self.broker.portfolio_value(current_price);
+                self.broker
+                    .trade_tracker
+                    .record_equity_snapshot(current_time, total_equity);
             }
 
             let current_candle = self.data_feed.get(data_index);
@@ -105,26 +105,31 @@ impl Engine {
 
         println!("Backtest completed in: {:?}", timer.elapsed());
 
-        // Creating analytics
         let last_tick = self.data_feed.last().expect("No data found");
-        let profit = f64::trunc(
-            ((self.broker.cash + self.broker.portfolio_value(last_tick))
-                - self.broker.analytics.added_funds)
-                * 100.0,
-        ) / 100.0;
+        let tracker = &self.broker.trade_tracker;
 
-        let profit_percentage =
-            f64::trunc(((profit / self.broker.analytics.added_funds) * 100.0) * 100.0) / 100.0;
+        let closed_trades: Vec<Trade> = tracker.get_closed_trades().to_vec();
+        let equity_curve = tracker.get_equity_curve();
+
+        let cash = self.broker.cash;
+        let portfolio_value = self.broker.portfolio_value(last_tick);
+
+        let metrics = GlobalMetrics::calculate(
+            &closed_trades,
+            equity_curve,
+            tracker.initial_capital,
+            0.03,
+            cash,
+            portfolio_value,
+            self.broker.analytics.total_placed_orders,
+            self.broker.analytics.total_exec_orders,
+            tracker.total_fees,
+            tracker.total_slippage,
+        );
 
         Ok(BacktestResult {
-            cash: f64::trunc(self.broker.cash * 100.0) / 100.0,
-            portfolio_value: f64::trunc(self.broker.portfolio_value(last_tick) * 100.0) / 100.0,
-            profit,
-            profit_percentage,
-            num_orders_placed: self.broker.analytics.total_placed_orders,
-            num_orders_executed: self.broker.analytics.total_exec_orders,
-            total_fees: self.broker.analytics.total_fees,
-            total_slippage: self.broker.analytics.total_slippage,
+            trades: closed_trades,
+            metrics,
         })
     }
 }

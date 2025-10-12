@@ -8,6 +8,7 @@ Fast and versatile backtest framework to test your quantitative strategies. Here
 - Can be used with a variety of assets (Stocks, Crypto, ...)
 - Place market orders, limit orders and stop orders
 - Able to simulate down to a precision of 1 nanosecond for HFT strategies
+- Detailed metrics about your strategy performance with per trade analysis
 - Configurable slippage for a more realistic result
 
 > [!IMPORTANT]
@@ -22,7 +23,7 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
     "parameters": {
       "start_date": "2024-02-17 00:00:00",
       "end_date": "2025-02-17 00:00:00",
-      "tick": "1s"
+      "tick": "1m"
     },
     "data": "AAPL",
     "broker": {
@@ -42,15 +43,12 @@ curl -i http://localhost:3000/run -H "Content-Type: application/json" -d '{
 ## Ideas and TODO
 
 - Data source agnostic, provide OHLCV data how you wish
-- Better analytics result with per trade feedback
-- Visualize your strategy using a dedicated frontend. Analyze key performance metrics such as:
-  - Return on Investment (ROI)
-  - Sharpe Ratio: Measures risk-adjusted return.
-  - Max Drawdown: The largest peak-to-trough decline.
-  - Win Rate: Percentage of profitable trades.
+- Benchmark strategy against a buy and hold strategy & indexes on the same period
+- Calculate taxes impact on your strategy performance
+- Visualize your strategy using a dedicated frontend
 - Support for derivatives (Futures, Options, Warrants, ...)
 - Support for Stop-Limit orders
-- Supports multiple instruments in one simulation for complex strategies
+- Support multiple instruments in one simulation for complex strategies
 - Support L2 data for a better overview of the order book with spread visualization etc
 - Support other data types like FIX
 - Support for better splippage predictions using liquidity and volatility
